@@ -1,0 +1,10 @@
+# Игнорируем всё в корне, кроме папки проекта
+# Если ты инициализировал гит в папке Clip, а проект в yt-dlp-tma
+
+node_modules/
+yt-dlp-tma/node_modules/
+yt-dlp-tma/.env
+yt-dlp-tma/cookies.txt
+yt-dlp-tma/downloads/
+yt-dlp-tma/stats.json
+.DS_Store

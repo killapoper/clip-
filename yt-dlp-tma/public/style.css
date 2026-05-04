@@ -1,0 +1,670 @@
+:root {
+    --bg-color: #000000;
+    --glass-bg: rgba(30, 30, 35, 0.4);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --accent: #007aff;
+    /* Apple Blue */
+    --accent-glow: rgba(0, 122, 255, 0.4);
+    --text-primary: #ffffff;
+    --text-secondary: rgba(255, 255, 255, 0.55);
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-primary);
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    /* Изменено с center для мобилок */
+    overflow-x: hidden;
+    overflow-y: auto;
+    /* Разрешаем скролл */
+    position: relative;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Liquid glass animated background blobs */
+.blob {
+    position: absolute;
+    filter: blur(80px);
+    z-index: 0;
+    opacity: 0.65;
+    animation: float 12s infinite ease-in-out alternate;
+    pointer-events: none;
+}
+
+.blob-1 {
+    width: 250px;
+    height: 250px;
+    background: radial-gradient(circle, #5b247a, #1bcedf);
+    top: -50px;
+    left: -50px;
+}
+
+.blob-2 {
+    width: 200px;
+    height: 200px;
+    background: radial-gradient(circle, #007aff, #00ff88);
+    bottom: -50px;
+    right: -50px;
+    animation-delay: -6s;
+    animation-duration: 15s;
+}
+
+@keyframes float {
+    0% {
+        transform: translate(0, 0) scale(1) rotate(0deg);
+    }
+
+    100% {
+        transform: translate(40px, 40px) scale(1.15) rotate(10deg);
+    }
+}
+
+.app-wrapper {
+    position: relative;
+    z-index: 10;
+    width: 100%;
+    max-width: 400px;
+    padding: 20px 20px 140px 20px;
+    /* Еще больше отступ снизу для навбара */
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.tab-content {
+    display: none;
+    width: 100%;
+    margin-bottom: 20px;
+    /* Гарантированный зазор до навбара */
+}
+
+.tab-content.active {
+    display: block;
+}
+
+.glass-panel {
+    background: var(--glass-bg);
+    backdrop-filter: blur(40px) saturate(180%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    border: 1px solid var(--glass-border);
+    border-radius: 36px;
+    /* Большие радиусы как в iOS 18/26 */
+    padding: 32px 24px;
+    box-shadow: 0 30px 60px rgba(0, 0, 0, 0.5), inset 0 1.5px 0 rgba(255, 255, 255, 0.15);
+    text-align: center;
+    animation: scaleUp 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+    margin-top: 10vh;
+    /* Чтобы не прилипало к верху */
+}
+
+@keyframes scaleUp {
+    from {
+        opacity: 0;
+        transform: scale(0.95) translateY(20px);
+        filter: blur(5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+        filter: blur(0);
+    }
+}
+
+h1 {
+    font-size: 28px;
+    font-weight: 700;
+    margin: 0 0 6px 0;
+    letter-spacing: -0.8px;
+    color: var(--text-primary);
+}
+
+.subtitle {
+    font-size: 15px;
+    color: var(--text-secondary);
+    margin: 0 0 32px 0;
+    font-weight: 400;
+    letter-spacing: -0.3px;
+}
+
+/* iOS Segmented Control (Переключатель) */
+.segmented-control {
+    display: flex;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 16px;
+    padding: 4px;
+    margin-bottom: 28px;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+    position: relative;
+}
+
+.segmented-control input {
+    display: none;
+}
+
+.segment-label {
+    flex: 1;
+    text-align: center;
+    padding: 10px 0;
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: -0.2px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: 12px;
+    transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+    position: relative;
+    z-index: 2;
+}
+
+.segmented-control input:checked+.segment-label {
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.segment-highlight {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    bottom: 4px;
+    width: calc(50% - 4px);
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+    transition: transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+    z-index: 1;
+}
+
+#audio:checked~.segment-highlight {
+    transform: translateX(100%);
+}
+
+/* Стеклянное поле ввода (Input) */
+.input-container {
+    position: relative;
+    margin-bottom: 28px;
+}
+
+.link-input {
+    width: 100%;
+    box-sizing: border-box;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 20px;
+    padding: 18px 48px 18px 18px;
+    color: #fff;
+    font-size: 16px;
+    font-family: inherit;
+    outline: none;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+.link-input::placeholder {
+    color: rgba(255, 255, 255, 0.25);
+}
+
+.link-input:focus {
+    background: rgba(0, 0, 0, 0.4);
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 0 0 4px var(--accent-glow), inset 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Новая фишка: кнопка внутри инпута (вставить / очистить) */
+.action-btn-inside {
+    position: absolute;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 50%;
+    transition: color 0.2s, background 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.action-btn-inside:hover,
+.action-btn-inside:active {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.act-icon {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+}
+
+/* Основная кнопка Apple Style */
+.main-btn {
+    width: 100%;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 18px;
+    border-radius: 18px;
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+    cursor: pointer;
+    box-shadow: 0 8px 25px var(--accent-glow), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.main-btn:active {
+    transform: scale(0.95);
+}
+
+.main-btn.processing {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-secondary);
+    box-shadow: none;
+    cursor: not-allowed;
+    transform: scale(1);
+}
+
+.main-btn.success {
+    background: #32d74b;
+    /* iOS Green */
+    box-shadow: 0 8px 25px rgba(50, 215, 75, 0.4);
+    cursor: default;
+}
+
+.secondary-btn {
+    background: rgba(255, 255, 255, 0.05);
+    color: #ff453a;
+    /* iOS Red */
+    margin-top: 12px;
+    box-shadow: none;
+    border: 1px solid rgba(255, 69, 58, 0.15);
+    animation: fadeIn 0.4s ease-out;
+}
+
+.secondary-btn:active {
+    background: rgba(255, 69, 58, 0.1) !important;
+}
+
+/* Spinner анимация внутри кнопки */
+.spinner {
+    width: 20px;
+    height: 20px;
+    border: 2.5px solid rgba(255, 255, 255, 0.2);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    display: none;
+}
+
+.main-btn.processing .spinner {
+    display: block;
+}
+
+@keyframes spin {
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+/* iOS Progress Bar System */
+.progress-container {
+    margin-top: 32px;
+    display: none;
+    /* Скрыт по умолчанию */
+    animation: fadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.progress-container.active {
+    display: block;
+}
+
+.progress-info {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+#progressText {
+    color: var(--text-primary);
+    font-family: 'SF Mono', monospace;
+}
+
+.progress-track {
+    width: 100%;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 10px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.progress-bar {
+    width: 0%;
+    height: 100%;
+    background: linear-gradient(90deg, #007aff, #5856d6);
+    box-shadow: 0 0 15px var(--accent-glow);
+    border-radius: 10px;
+    transition: width 0.25s cubic-bezier(0.1, 0.5, 0.1, 1);
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.status {
+    margin-top: 18px;
+    font-size: 14px;
+    min-height: 20px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    opacity: 0;
+    transform: translateY(-8px);
+}
+
+.status.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.status.error {
+    color: #ff453a;
+    /* iOS Red */
+}
+
+.status.success {
+    color: #32d74b;
+    /* iOS Green */
+}
+
+/* Выбор качества */
+.quality-selector {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 24px;
+    animation: fadeIn 0.4s ease-out;
+}
+
+.quality-selector input {
+    display: none;
+}
+
+.quality-selector label {
+    padding: 10px 18px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 14px;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.quality-selector input:checked+label {
+    background: var(--accent);
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 15px var(--accent-glow);
+}
+
+/* Смарт Карточка Превью */
+.preview-card {
+    display: none;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 22px;
+    padding: 14px;
+    margin-bottom: 28px;
+    gap: 16px;
+    align-items: center;
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.preview-card.active {
+    display: flex;
+}
+
+#previewImg {
+    width: 70px;
+    height: 70px;
+    object-fit: cover;
+    border-radius: 14px;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.preview-info {
+    flex: 1;
+    text-align: left;
+    overflow: hidden;
+}
+
+#previewTitle {
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    margin: 0 0 4px 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#previewDetail {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Bottom Navigation Bar Styles */
+.bottom-bar {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: calc(100% - 40px);
+    max-width: 380px;
+    height: 76px;
+    background: rgba(20, 20, 25, 0.75);
+    backdrop-filter: blur(25px) saturate(180%);
+    -webkit-backdrop-filter: blur(25px) saturate(180%);
+    border-radius: 38px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 10px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    z-index: 1000;
+    box-sizing: border-box;
+    overflow: hidden;
+    transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+/* Скрываем навигацию при фокусе на инпуте (для iOS) */
+body.keyboard-open .bottom-bar {
+    transform: translate(-50%, 100px);
+    opacity: 0;
+    pointer-events: none;
+}
+
+.nav-item {
+    flex: 1;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    position: relative;
+    transition: all 0.3s ease;
+    z-index: 2;
+}
+
+.nav-icon {
+    width: 24px;
+    height: 24px;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.nav-item span {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: -0.2px;
+}
+
+/* Пузырек активного состояния */
+.nav-bubble {
+    position: absolute;
+    top: 6px;
+    bottom: 6px;
+    left: 6px;
+    right: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 30px;
+    opacity: 0;
+    transform: scale(0.85);
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: -1;
+}
+
+.nav-item.active {
+    color: #fff;
+}
+
+.nav-item.active .nav-icon {
+    transform: translateY(-2px);
+    color: var(--accent);
+}
+
+.nav-item.active .nav-bubble {
+    opacity: 1;
+    transform: scale(1);
+    background: rgba(255, 255, 255, 0.12);
+}
+
+/* Доп. стили для новых вкладок */
+.empty-state {
+    padding: 40px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.empty-icon {
+    width: 60px;
+    height: 60px;
+    stroke: var(--text-secondary);
+    stroke-width: 1.5;
+    animation: pulses 2s infinite ease-in-out;
+}
+
+@keyframes pulses {
+    0% {
+        transform: scale(1);
+        opacity: 0.5;
+    }
+
+    50% {
+        transform: scale(1.1);
+        opacity: 0.8;
+    }
+
+    100% {
+        transform: scale(1);
+        opacity: 0.5;
+    }
+}
+
+.settings-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    text-align: left;
+}
+
+.settings-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.settings-value {
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.settings-value.badge {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-family: 'SF Mono', monospace;
+}
+
+.lang-toggle {
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.lang-toggle:active {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Убираем скролл бар */
+::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+}
