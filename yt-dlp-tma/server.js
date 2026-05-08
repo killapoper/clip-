@@ -59,6 +59,14 @@ bot.catch((err, ctx) => {
     }
 });
 
+// Глобальные обработчики для предотвращения «тихих» падений
+process.on('uncaughtException', (err) => {
+    console.error('💥 КРИТИЧЕСКАЯ ОШИБКА (uncaughtException):', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('💥 КРИТИЧЕСКАЯ ОШИБКА (unhandledRejection):', reason);
+});
+
 // --- СИСТЕМА АНАЛИТИКИ (Stats Persistence) ---
 const statsFile = path.join(__dirname, 'stats.json');
 let stats = {
@@ -362,17 +370,17 @@ app.post('/api/download', async (req, res) => {
             const height = quality || '1080';
             args = [
                 '--js-runtime', 'node',
-                '--concurrent-fragments', '32',
+                '--concurrent-fragments', '16', // Снижено с 32 для стабильности
                 '-f', `bestvideo[height<=${height}][ext=mp4]+bestaudio[ext=m4a]/best[height<=${height}][ext=mp4]/best`,
                 '--merge-output-format', 'mp4',
                 '--format-sort', 'vcodec:h264,res,br',
                 '--no-playlist',
                 '--progress',
                 '--newline',
-                '--buffer-size', '32M',
+                '--buffer-size', '16M', // Снижено с 32М
                 '--no-mtime',
                 '--external-downloader', 'aria2c',
-                '--external-downloader-args', 'aria2c:-x 16 -s 16 -k 1M',
+                '--external-downloader-args', 'aria2c:-x 8 -s 8 -k 1M', // Снижено с 16
                 '-o', outputTemplate,
                 url
             ];
@@ -414,13 +422,34 @@ app.post('/api/download', async (req, res) => {
 
             progressStore[jobId] = 100;
 
+            // Улучшенный поиск файла: игнорируем служебные файлы .aria2, .part, .ytdl
             const files = fs.readdirSync(downloadsDir);
-            const downloadedFiles = files.filter(f => f.startsWith(jobId));
-            if (downloadedFiles.length === 0) return;
+            const downloadedFiles = files.filter(f => {
+                const lowerF = f.toLowerCase();
+                return f.startsWith(jobId) && 
+                       !lowerF.endsWith('.aria2') && 
+                       !lowerF.endsWith('.part') && 
+                       !lowerF.endsWith('.ytdl') &&
+                       !lowerF.endsWith('.temp');
+            });
+
+            if (downloadedFiles.length === 0) {
+                console.error(`🔴 [Error] Файл для задания ${jobId} не найден после завершения загрузки.`);
+                try { await bot.telegram.editMessageText(chatId, statusMessageId, undefined, `❌ Ошибка: Файл не найден после загрузки.`); } catch (e) { }
+                return;
+            }
 
             const filePath = path.join(downloadsDir, downloadedFiles[0]);
             const statsInfo = fs.statSync(filePath);
             const fileSizeMB = statsInfo.size / (1024 * 1024);
+
+            // Проверка на пустой файл
+            if (statsInfo.size === 0) {
+                console.error(`🔴 [Error] Файл ${filePath} имеет размер 0 байт.`);
+                try { await bot.telegram.editMessageText(chatId, statusMessageId, undefined, `❌ Ошибка: Скачанный файл пуст (0 байт).`); } catch (e) { }
+                if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+                return;
+            }
 
             // ТРЕКИНГ ТРАФИКА
             stats.totalTrafficBytes += statsInfo.size;
@@ -442,7 +471,7 @@ app.post('/api/download', async (req, res) => {
                     const toUpload = new CustomFile(path.basename(filePath), statsInfo.size, filePath);
                     const uploadedFile = await client.uploadFile({
                         file: toUpload,
-                        workers: 32, // Удвоенное количество воркеров
+                        workers: 8, // Снижено с 32 для предотвращения OOM
                     });
 
                     await client.sendFile(parseInt(chatId), {
@@ -518,7 +547,17 @@ app.get('/get/:filename', (req, res) => {
     const fileName = req.params.filename;
     const filePath = path.join(downloadsDir, fileName);
 
+    // Безопасность: проверяем, что файл находится именно в папке downloads
+    if (!filePath.startsWith(downloadsDir)) {
+        return res.status(403).send('Forbidden');
+    }
+
     if (fs.existsSync(filePath)) {
+        const stats = fs.statSync(filePath);
+        if (stats.size === 0) {
+            return res.status(404).send('Файл пуст');
+        }
+
         const jobId = fileName.split('.')[0];
         let originalTitle = titleStore[jobId] || 'video';
         const safeTitle = originalTitle.replace(/[\\/:*?"<>|]/g, '_').substring(0, 100);
@@ -526,14 +565,27 @@ app.get('/get/:filename', (req, res) => {
         const downloadName = `${safeTitle}${extension}`;
 
         res.setHeader('X-Accel-Buffering', 'no');
-        res.setHeader('Content-Type', 'video/mp4');
+        
+        // Динамический MIME-тип
+        if (extension.toLowerCase() === '.mp3') {
+            res.setHeader('Content-Type', 'audio/mpeg');
+        } else {
+            res.setHeader('Content-Type', 'video/mp4');
+        }
+
         res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(downloadName)}"`);
 
+        console.log(`[📂 Download] Serving file: ${fileName} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
+
         res.sendFile(filePath, (err) => {
-            if (err && !res.headersSent) res.status(500).send('Error');
+            if (err) {
+                console.error(`[📂 Download Error] ${fileName}:`, err.message);
+                if (!res.headersSent) res.status(500).send('Ошибка сервера при передаче файла');
+            }
         });
     } else {
-        res.status(404).send('Not Found');
+        console.warn(`[📂 Download 404] File not found: ${fileName}`);
+        res.status(404).send('Файл не найден или срок его жизни (1 час) истек');
     }
 });
 
