@@ -18,9 +18,9 @@ const port = process.env.PORT || 3000;
 const webAppUrl = process.env.WEBAPP_URL;
 const adminId = parseInt(process.env.ADMIN_ID) || 0;
 
-// Официальные ключи (по умолчанию) или ваши из .env
-const API_ID = parseInt(process.env.API_ID) || 2040;
-const API_HASH = process.env.API_HASH || 'b18441a1ed607e10e39537f2fd130456';
+// Официальные ключи (по умолчанию)
+const API_ID = parseInt(process.env.API_ID) || 17349;
+const API_HASH = process.env.API_HASH || '344583e45741c957fe186160562e2122';
 const stringSession = new StringSession(process.env.TELEGRAM_SESSION || "");
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
@@ -31,24 +31,53 @@ const client = new TelegramClient(stringSession, API_ID, API_HASH, {
     appVersion: "1.0.0"
 });
 
-// Функция для исправления формата cookies.txt (yt-dlp очень капризный)
+// Улучшенная функция для исправления формата cookies.txt
 function fixCookiesFormat() {
     const cookiesPath = path.join(__dirname, 'cookies.txt');
     if (fs.existsSync(cookiesPath)) {
         try {
             let content = fs.readFileSync(cookiesPath, 'utf8');
-            // Убираем BOM и лишние пробелы в начале
-            content = content.replace(/^\uFEFF/, '').trimStart();
             
-            // Если заголовка нет, добавляем его
-            if (!content.startsWith('# Netscape HTTP Cookie File')) {
-                content = '# Netscape HTTP Cookie File\n' + content;
+            // 1. Убираем BOM
+            content = content.replace(/^\uFEFF/, '');
+            
+            // 2. Разбиваем на строки и чистим
+            let lines = content.split('\n');
+            let fixedLines = [];
+            let headerFound = false;
+
+            for (let line of lines) {
+                let trimmed = line.trim();
+                if (!trimmed) continue;
+
+                if (trimmed.startsWith('# Netscape HTTP Cookie File')) {
+                    headerFound = true;
+                    fixedLines.push('# Netscape HTTP Cookie File');
+                    continue;
+                }
+
+                if (trimmed.startsWith('#')) {
+                    fixedLines.push(trimmed);
+                    continue;
+                }
+
+                // Если в строке есть пробелы, но нет табов - пробуем заменить
+                // В Netscape должно быть 7 колонок
+                if (trimmed.includes(' ') && !trimmed.includes('\t')) {
+                    // Заменяем последовательности пробелов на один таб
+                    trimmed = trimmed.replace(/\s+/g, '\t');
+                }
+                fixedLines.push(trimmed);
             }
-            
-            fs.writeFileSync(cookiesPath, content, 'utf8');
-            console.log("✅ [Cookies] Формат cookies.txt проверен и исправлен.");
+
+            if (!headerFound) {
+                fixedLines.unshift('# Netscape HTTP Cookie File');
+            }
+
+            fs.writeFileSync(cookiesPath, fixedLines.join('\n') + '\n', 'utf8');
+            console.log("✅ [Cookies] Файл cookies.txt успешно нормализован (пробелы заменены на табы).");
         } catch (err) {
-            console.error("❌ [Cookies] Ошибка при исправлении cookies.txt:", err.message);
+            console.error("❌ [Cookies] Ошибка при нормализации cookies.txt:", err.message);
         }
     }
 }
