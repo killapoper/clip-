@@ -21,7 +21,7 @@ const adminId = parseInt(process.env.ADMIN_ID) || 0;
 // Официальные ключи Telegram Android (Альтернативный вариант для 2 ГБ)
 const API_ID = 6;
 const API_HASH = 'eb06d4ab35277259747c0cd394c0939d';
-const stringSession = new StringSession("");
+const stringSession = new StringSession(process.env.TELEGRAM_SESSION || "");
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const client = new TelegramClient(stringSession, API_ID, API_HASH, {
@@ -37,9 +37,14 @@ const client = new TelegramClient(stringSession, API_ID, API_HASH, {
         await client.start({
             botAuthToken: process.env.BOT_TOKEN,
         });
-        console.log("🚀 [MTProto] МАГИЯ АКТИВИРОВАНА! Прямой доступ к Telegram на 2 ГБ готов.");
+        const savedSession = client.session.save();
+        console.log("🚀 [MTProto] МАГИЯ АКТИВИРОВАНА!");
+        if (!process.env.TELEGRAM_SESSION) {
+            console.log("🔑 [SESSION] Скопируйте эту строку в .env переменную TELEGRAM_SESSION для стабильности:");
+            console.log(savedSession);
+        }
     } catch (err) {
-        console.warn("⚠️ [MTProto] Не удалось запустить 2 ГБ режим (ошибка ключей). Бот продолжит работу в стандартном режиме (50 МБ).");
+        console.warn("⚠️ [MTProto] Не удалось запустить 2 ГБ режим.");
         console.error("Детали ошибки:", err.message);
     }
 })();
@@ -387,7 +392,14 @@ app.post('/api/download', async (req, res) => {
         }
 
         const cookiesPath = path.join(__dirname, 'cookies.txt');
-        if (fs.existsSync(cookiesPath)) args.unshift('--cookies', cookiesPath);
+        if (fs.existsSync(cookiesPath)) {
+            const cookieStat = fs.statSync(cookiesPath);
+            if (cookieStat.isFile()) {
+                args.unshift('--cookies', cookiesPath);
+            } else {
+                console.warn("⚠️ [Warning] cookies.txt является папкой, а не файлом! Пропускаю использование куки.");
+            }
+        }
 
         const ytDlp = spawn('yt-dlp', args);
         jobStore[jobId] = ytDlp;
