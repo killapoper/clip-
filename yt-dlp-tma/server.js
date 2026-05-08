@@ -18,21 +18,44 @@ const port = process.env.PORT || 3000;
 const webAppUrl = process.env.WEBAPP_URL;
 const adminId = parseInt(process.env.ADMIN_ID) || 0;
 
-// Официальные ключи Telegram Android (Альтернативный вариант для 2 ГБ)
-const API_ID = 6;
-const API_HASH = 'eb06d4ab35277259747c0cd394c0939d';
+// Официальные ключи (по умолчанию) или ваши из .env
+const API_ID = parseInt(process.env.API_ID) || 2040;
+const API_HASH = process.env.API_HASH || 'b18441a1ed607e10e39537f2fd130456';
 const stringSession = new StringSession(process.env.TELEGRAM_SESSION || "");
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const client = new TelegramClient(stringSession, API_ID, API_HASH, {
     connectionRetries: 5,
-    deviceModel: "Klyro Android Suite",
-    systemVersion: "Android 14",
-    appVersion: "10.0.1"
+    deviceModel: "Klyro Desktop",
+    systemVersion: "Windows 11",
+    appVersion: "1.0.0"
 });
+
+// Функция для исправления формата cookies.txt (yt-dlp очень капризный)
+function fixCookiesFormat() {
+    const cookiesPath = path.join(__dirname, 'cookies.txt');
+    if (fs.existsSync(cookiesPath)) {
+        try {
+            let content = fs.readFileSync(cookiesPath, 'utf8');
+            // Убираем BOM и лишние пробелы в начале
+            content = content.replace(/^\uFEFF/, '').trimStart();
+            
+            // Если заголовка нет, добавляем его
+            if (!content.startsWith('# Netscape HTTP Cookie File')) {
+                content = '# Netscape HTTP Cookie File\n' + content;
+            }
+            
+            fs.writeFileSync(cookiesPath, content, 'utf8');
+            console.log("✅ [Cookies] Формат cookies.txt проверен и исправлен.");
+        } catch (err) {
+            console.error("❌ [Cookies] Ошибка при исправлении cookies.txt:", err.message);
+        }
+    }
+}
 
 // Инициализация GramJS (Безопасный запуск)
 (async () => {
+    fixCookiesFormat();
     try {
         await client.start({
             botAuthToken: process.env.BOT_TOKEN,
@@ -40,7 +63,7 @@ const client = new TelegramClient(stringSession, API_ID, API_HASH, {
         const savedSession = client.session.save();
         console.log("🚀 [MTProto] МАГИЯ АКТИВИРОВАНА!");
         if (!process.env.TELEGRAM_SESSION) {
-            console.log("🔑 [SESSION] Скопируйте эту строку в .env переменную TELEGRAM_SESSION для стабильности:");
+            console.log("🔑 [SESSION] Скопируйте эту строку в .env (переменная TELEGRAM_SESSION):");
             console.log(savedSession);
         }
     } catch (err) {
