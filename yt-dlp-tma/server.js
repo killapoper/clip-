@@ -747,7 +747,9 @@ async function startDownloadJob({ url, chatId, format = 'video', quality = '1080
                 const domain = webAppUrl ? webAppUrl.replace(/\/$/, '') : '';
                 const link = `${domain}/get/${encodeURIComponent(path.basename(filePath))}`;
 
-                const failMsg = `⚠️ Ошибка отправки в чат. Но файл доступен по прямой ссылке на 1 час:\n👉 ${link}`;
+                // Выводим текст ошибки для диагностики
+                const errDetail = err.message ? ` (${err.message})` : '';
+                const failMsg = `⚠️ Ошибка отправки в чат${errDetail}. Но файл доступен по прямой ссылке на 1 час:\n👉 ${link}`;
 
                 if (statusMessageId) {
                     try { await bot.telegram.editMessageText(chatId, statusMessageId, undefined, failMsg); } catch (e) {
