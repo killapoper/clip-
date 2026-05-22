@@ -40,6 +40,11 @@ if [ ! -f cookies.txt ]; then
     echo "📝 Создан пустой cookies.txt"
 fi
 
+if [ ! -f session.txt ]; then
+    touch session.txt
+    echo "📝 Создан пустой session.txt"
+fi
+
 if [ ! -f .env ]; then
     echo "⚠️ ВНИМАНИЕ: Файл .env не найден! Убедитесь, что вы создали его и заполнили BOT_TOKEN."
 fi

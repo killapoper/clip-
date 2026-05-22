@@ -13,6 +13,7 @@ services:
       - ./downloads:/app/downloads
       - ./stats.json:/app/stats.json
       - ./cookies.txt:/app/cookies.txt
+      - ./session.txt:/app/session.txt
     # Даем приложению знать, что оно в Docker (если нужно)
     environment:
       - NODE_ENV=production

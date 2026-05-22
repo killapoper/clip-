@@ -110,29 +110,44 @@ pasteBtn.addEventListener('click', async () => {
         hidePreview();
         urlInput.focus();
     } else {
-        // Пытаемся использовать официальный метод Telegram (надежнее на iOS)
-        if (typeof tg.readTextFromClipboard === 'function') {
-            tg.readTextFromClipboard((text) => {
-                if (text) {
-                    urlInput.value = text;
+        // 1. Сначала пробуем стандартный HTML5 Clipboard API
+        try {
+            if (navigator.clipboard && typeof navigator.clipboard.readText === 'function') {
+                const text = await navigator.clipboard.readText();
+                if (text && text.trim().startsWith('http')) {
+                    urlInput.value = text.trim();
                     updateActionBtn();
                     handleUrlChange();
+                    return;
                 }
-            });
-            return;
-        }
-
-        // Fallback на стандартный метод
-        try {
-            const text = await navigator.clipboard.readText();
-            if (text) {
-                urlInput.value = text;
-                updateActionBtn();
-                handleUrlChange();
             }
         } catch (err) {
-            showStatus('Нет доступа к буферу. Вставьте ссылку вручную.', 'error');
+            console.log("Standard clipboard API failed, trying Telegram SDK...", err);
         }
+
+        // 2. Если не получилось, пробуем официальный Telegram SDK
+        if (tg.readTextFromClipboard) {
+            try {
+                tg.readTextFromClipboard((text) => {
+                    if (text && text.trim().startsWith('http')) {
+                        urlInput.value = text.trim();
+                        updateActionBtn();
+                        handleUrlChange();
+                    } else {
+                        // Если в буфере пусто или не ссылка, помогаем пользователю вставить вручную
+                        urlInput.focus();
+                        showStatus('Зажмите поле ввода для вставки ссылки.', 'error');
+                    }
+                });
+                return;
+            } catch (sdkErr) {
+                console.error("Telegram SDK clipboard reading failed:", sdkErr);
+            }
+        }
+
+        // 3. Крайний случай: фокусим инпут для вызова клавиатуры с системной кнопкой Paste
+        urlInput.focus();
+        showStatus('Зажмите поле ввода для вставки ссылки.', 'error');
     }
 });
 

@@ -21,7 +21,22 @@ const adminId = parseInt(process.env.ADMIN_ID) || 0;
 // Официальные ключи (по умолчанию)
 const API_ID = parseInt(process.env.API_ID) || 17349;
 const API_HASH = process.env.API_HASH || '344583e45741c957fe186160562e2122';
-const stringSession = new StringSession(process.env.TELEGRAM_SESSION || "");
+
+// Загрузка сессии из файла для персистентности в Docker
+const sessionPath = path.join(__dirname, 'session.txt');
+let sessionStr = "";
+if (fs.existsSync(sessionPath)) {
+    try {
+        sessionStr = fs.readFileSync(sessionPath, 'utf8').trim();
+    } catch (e) {
+        console.error("❌ Ошибка чтения session.txt:", e.message);
+    }
+}
+if (!sessionStr) {
+    sessionStr = process.env.TELEGRAM_SESSION || "";
+}
+
+const stringSession = new StringSession(sessionStr);
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const client = new TelegramClient(stringSession, API_ID, API_HASH, {
@@ -82,17 +97,44 @@ function fixCookiesFormat() {
     }
 }
 
+// Функция для автоматического обновления yt-dlp
+function autoUpdateYtDlp() {
+    console.log("🔄 [Auto-Update] Запуск автоматического обновления yt-dlp...");
+    const { exec } = require('child_process');
+    exec('pip3 install -U yt-dlp --break-system-packages', (error, stdout, stderr) => {
+        if (error) {
+            console.error(`❌ [Auto-Update] Ошибка при обновлении yt-dlp: ${error.message}`);
+            return;
+        }
+        console.log(`✅ [Auto-Update] yt-dlp обновлен:\n${stdout.trim()}`);
+    });
+}
+
 // Инициализация GramJS (Безопасный запуск)
 (async () => {
     fixCookiesFormat();
+    autoUpdateYtDlp();
+    
+    // Запуск автоматического обновления каждые 24 часа
+    setInterval(autoUpdateYtDlp, 24 * 60 * 60 * 1000);
+
     try {
         await client.start({
             botAuthToken: process.env.BOT_TOKEN,
         });
         const savedSession = client.session.save();
         console.log("🚀 [MTProto] МАГИЯ АКТИВИРОВАНА!");
-        if (!process.env.TELEGRAM_SESSION) {
-            console.log("🔑 [SESSION] Скопируйте эту строку в .env (переменная TELEGRAM_SESSION):");
+        
+        // Сохраняем сессию в файл для автоматического использования при перезапуске
+        try {
+            fs.writeFileSync(sessionPath, savedSession, 'utf8');
+            console.log("💾 [SESSION] Сессия сохранена в session.txt");
+        } catch (e) {
+            console.error("❌ Не удалось сохранить session.txt:", e.message);
+        }
+
+        if (!sessionStr && !process.env.TELEGRAM_SESSION) {
+            console.log("🔑 [SESSION] Скопируйте эту строку в .env или session.txt (если не сохранилось):");
             console.log(savedSession);
         }
     } catch (err) {
@@ -197,6 +239,8 @@ const progressStore = {};
 const titleStore = {};
 const jobStore = {}; // Хранилище процессов { jobId: childProcess }
 const chatStore = {}; // Хранилище chatId для каждой работы { jobId: chatId }
+const pendingDownloads = {}; // Временный стор для ссылок из чата { pendingId: { url, chatId, title } }
+const MAX_CONCURRENT_JOBS = 3; // Лимит параллельных загрузок кумулятивно
 
 // Проверка наличия обязательных переменных
 if (!process.env.BOT_TOKEN) {
@@ -301,6 +345,7 @@ bot.command('admin', async (ctx) => {
         const usage = getSystemUsage();
         const diskStr = usage.diskUsageGB ? usage.diskUsageGB.toFixed(2) : "0.00";
 
+        const activeJobsCount = Object.keys(jobStore).length;
         const report = `
 📊 <b>Админ-панель Klyro</b>
 
@@ -308,6 +353,8 @@ bot.command('admin', async (ctx) => {
 👥 Всего юзеров: <b>${allTimeCount}</b>
 📥 Всего загрузок: <b>${downloadsCount}</b>
 💾 Общий трафик: <b>${trafficGB} ГБ</b>
+
+⚡️ Активных загрузок: <b>${activeJobsCount} / ${MAX_CONCURRENT_JOBS}</b>
 
 🚀 <b>Топ платформ:</b>
 ${sortedLinks || 'Пока нет данных'}
@@ -386,10 +433,83 @@ bot.action('admin_emergency_stop', async (ctx) => {
     }
 });
 
-// API для скачивания
-app.post('/api/download', async (req, res) => {
-    const { url, chatId, format, quality, title } = req.body;
+// Действие: Отмена конкретной загрузки пользователем
+bot.action(/^cancel_(.+)$/, async (ctx) => {
+    const jobId = ctx.match[1];
+    
+    if (jobStore[jobId]) {
+        try {
+            jobStore[jobId].kill('SIGKILL');
+        } catch (e) {
+            console.error("Ошибка при SIGKILL активного процесса:", e);
+        }
+        delete jobStore[jobId];
+    }
+    
+    delete chatStore[jobId];
+    delete progressStore[jobId];
+    delete titleStore[jobId];
+    
+    try {
+        await ctx.answerCbQuery('Загрузка отменена');
+        await ctx.editMessageText('❌ Загрузка отменена пользователем.');
+    } catch (e) { }
+});
+
+// Действие: Запуск скачивания с выбранными параметрами из чата
+bot.action(/^dl_(.+)_(video|audio)_?(\d+)?$/, async (ctx) => {
+    const pendingId = ctx.match[1];
+    const format = ctx.match[2];
+    const quality = ctx.match[3] || '1080';
+    
+    const task = pendingDownloads[pendingId];
+    if (!task) {
+        try {
+            await ctx.answerCbQuery('⚠️ Ссылка устарела');
+            await ctx.editMessageText('⚠️ Ссылка устарела. Пожалуйста, отправьте ссылку заново.');
+        } catch (e) { }
+        return;
+    }
+    
+    delete pendingDownloads[pendingId];
+    
+    // Проверка лимита параллельных задач
+    if (Object.keys(jobStore).length >= MAX_CONCURRENT_JOBS) {
+        try {
+            await ctx.answerCbQuery('⚠️ Сервер временно перегружен');
+            await ctx.editMessageText('⚠️ Извините, сейчас сервер перегружен (превышен лимит параллельных загрузок). Пожалуйста, попробуйте через пару минут.');
+        } catch (e) { }
+        return;
+    }
+    
+    try {
+        await ctx.answerCbQuery('Запуск загрузки...');
+        await ctx.deleteMessage();
+    } catch (e) { }
+    
     const jobId = randomUUID();
+    startDownloadJob({ 
+        url: task.url, 
+        chatId: task.chatId, 
+        format, 
+        quality, 
+        title: task.title, 
+        jobId 
+    });
+});
+
+// Функция запуска задачи скачивания и отправки
+async function startDownloadJob({ url, chatId, format = 'video', quality = '1080', title = 'video', jobId = null }) {
+    if (!jobId) jobId = randomUUID();
+
+    // Проверка лимита параллельных задач
+    if (Object.keys(jobStore).length >= MAX_CONCURRENT_JOBS) {
+        try {
+            await bot.telegram.sendMessage(chatId, '⚠️ Извините, сейчас сервер перегружен (выполняется слишком много параллельных загрузок). Пожалуйста, попробуйте через пару минут.');
+        } catch (e) { }
+        return;
+    }
+
     titleStore[jobId] = title || 'video';
     chatStore[jobId] = chatId; // Запоминаем для отмены
 
@@ -398,16 +518,20 @@ app.post('/api/download', async (req, res) => {
     trackUser(parsedChatId);
     trackLink(url);
 
-    res.json({ jobId });
-
+    let progressInterval = null;
     try {
         let statusMessageId = null;
         try {
-            const statusMsg = await bot.telegram.sendMessage(chatId, '🎬 Готовлю ваше медиа...');
+            const statusMsg = await bot.telegram.sendMessage(chatId, '🎬 Готовлю ваше медиа...', {
+                reply_markup: {
+                    inline_keyboard: [[
+                        { text: '🛑 Отменить', callback_data: `cancel_${jobId}` }
+                    ]]
+                }
+            });
             statusMessageId = statusMsg.message_id;
         } catch (msgErr) {
             console.warn(`[⚠️] Не удалось отправить статусное сообщение пользователю ${chatId}:`, msgErr.message);
-            // Продолжаем выполнение, даже если сообщение не отправилось
         }
 
         const outputTemplate = path.join(downloadsDir, `${jobId}.%(ext)s`);
@@ -427,17 +551,17 @@ app.post('/api/download', async (req, res) => {
             const height = quality || '1080';
             args = [
                 '--js-runtime', 'node',
-                '--concurrent-fragments', '16', // Снижено с 32 для стабильности
+                '--concurrent-fragments', '16',
                 '-f', `bestvideo[height<=${height}][ext=mp4]+bestaudio[ext=m4a]/best[height<=${height}][ext=mp4]/best`,
                 '--merge-output-format', 'mp4',
                 '--format-sort', 'vcodec:h264,res,br',
                 '--no-playlist',
                 '--progress',
                 '--newline',
-                '--buffer-size', '16M', // Снижено с 32М
+                '--buffer-size', '16M',
                 '--no-mtime',
                 '--external-downloader', 'aria2c',
-                '--external-downloader-args', 'aria2c:-x 8 -s 8 -k 1M', // Снижено с 16
+                '--external-downloader-args', 'aria2c:-x 8 -s 8 -k 1M',
                 '-o', outputTemplate,
                 url
             ];
@@ -459,12 +583,34 @@ app.post('/api/download', async (req, res) => {
         let ytStderr = '';
         const handleOutput = (data) => {
             const str = data.toString();
-            // console.log(`[JOB ${jobId}] OUT: ${str.substring(0, 50)}`); // Дебаг на сервере
-            const match = str.match(/(\d+(\.\d+)?)%/);
-            if (match) {
-                const val = parseFloat(match[1]);
-                if (!progressStore[jobId] || val > progressStore[jobId]) {
-                    progressStore[jobId] = val;
+            const lines = str.split(/[\r\n]+/);
+            
+            for (let i = lines.length - 1; i >= 0; i--) {
+                const line = lines[i].trim();
+                if (!line) continue;
+                
+                // 1. Поиск стандартного процента (%)
+                const pctMatch = line.match(/(\d+(\.\d+)?)%/);
+                if (pctMatch) {
+                    const val = parseFloat(pctMatch[1]);
+                    if (!progressStore[jobId] || val > progressStore[jobId]) {
+                        progressStore[jobId] = val;
+                    }
+                    break;
+                }
+                
+                // 2. Поиск HLS-фрагментов (например, "Fragment 12 of 120")
+                const fragMatch = line.match(/Fragment\s+(\d+)\s+of\s+(\d+)/i);
+                if (fragMatch) {
+                    const current = parseInt(fragMatch[1], 10);
+                    const total = parseInt(fragMatch[2], 10);
+                    if (total > 0) {
+                        const val = Math.round((current / total) * 100 * 10) / 10;
+                        if (!progressStore[jobId] || val > progressStore[jobId]) {
+                            progressStore[jobId] = val;
+                        }
+                    }
+                    break;
                 }
             }
         };
@@ -472,21 +618,63 @@ app.post('/api/download', async (req, res) => {
         ytDlp.stdout.on('data', handleOutput);
         ytDlp.stderr.on('data', (d) => {
             ytStderr += d.toString();
-            handleOutput(d); // Пробуем искать прогресс и в stderr
+            handleOutput(d);
         });
 
+        // Интервал обновления статуса скачивания в самом Telegram (раз в 3 секунды)
+        let lastEditedProgress = -1;
+        let lastEditTime = 0;
+        progressInterval = setInterval(async () => {
+            const currentProgress = progressStore[jobId];
+            if (currentProgress === undefined) return;
+            
+            const now = Date.now();
+            if (Math.floor(currentProgress) !== Math.floor(lastEditedProgress) && (now - lastEditTime > 3000)) {
+                lastEditedProgress = currentProgress;
+                lastEditTime = now;
+                if (statusMessageId) {
+                    try {
+                        await bot.telegram.editMessageText(
+                            chatId, 
+                            statusMessageId, 
+                            undefined, 
+                            `🎬 Скачиваю ваше медиа: ${Math.floor(currentProgress)}%...`,
+                            {
+                                reply_markup: {
+                                    inline_keyboard: [[
+                                        { text: '🛑 Отменить', callback_data: `cancel_${jobId}` }
+                                    ]]
+                                }
+                            }
+                        );
+                    } catch (e) { }
+                }
+            }
+        }, 1000);
+
         ytDlp.on('close', async (code) => {
+            if (progressInterval) clearInterval(progressInterval);
+            
+            // Если задание уже удалено (например, отменено вручную)
+            if (!chatStore[jobId]) {
+                delete jobStore[jobId];
+                return;
+            }
+            
             delete jobStore[jobId];
+
             if (code !== 0) {
                 console.error(`🔴 [yt-dlp error] Code: ${code} | JobId: ${jobId}`);
                 console.error(`Stderr: ${ytStderr}`);
                 try { await bot.telegram.editMessageText(chatId, statusMessageId, undefined, `❌ Ошибка загрузки.\n\nДетали: ${ytStderr.substring(0, 100)}...`); } catch (e) { }
+                delete chatStore[jobId];
+                delete progressStore[jobId];
+                delete titleStore[jobId];
                 return;
             }
 
             progressStore[jobId] = 100;
 
-            // Улучшенный поиск файла: игнорируем служебные файлы .aria2, .part, .ytdl
             const files = fs.readdirSync(downloadsDir);
             const downloadedFiles = files.filter(f => {
                 const lowerF = f.toLowerCase();
@@ -500,6 +688,9 @@ app.post('/api/download', async (req, res) => {
             if (downloadedFiles.length === 0) {
                 console.error(`🔴 [Error] Файл для задания ${jobId} не найден после завершения загрузки.`);
                 try { await bot.telegram.editMessageText(chatId, statusMessageId, undefined, `❌ Ошибка: Файл не найден после загрузки.`); } catch (e) { }
+                delete chatStore[jobId];
+                delete progressStore[jobId];
+                delete titleStore[jobId];
                 return;
             }
 
@@ -507,22 +698,25 @@ app.post('/api/download', async (req, res) => {
             const statsInfo = fs.statSync(filePath);
             const fileSizeMB = statsInfo.size / (1024 * 1024);
 
-            // Проверка на пустой файл
             if (statsInfo.size === 0) {
                 console.error(`🔴 [Error] Файл ${filePath} имеет размер 0 байт.`);
                 try { await bot.telegram.editMessageText(chatId, statusMessageId, undefined, `❌ Ошибка: Скачанный файл пуст (0 байт).`); } catch (e) { }
-                if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+                if (fs.existsSync(filePath)) {
+                    try { fs.unlinkSync(filePath); } catch (e) { }
+                }
+                delete chatStore[jobId];
+                delete progressStore[jobId];
+                delete titleStore[jobId];
                 return;
             }
 
-            // ТРЕКИНГ ТРАФИКА
             stats.totalTrafficBytes += statsInfo.size;
             stats.totalDownloads += 1;
             saveStats();
 
             if (statusMessageId) {
                 try {
-                    await bot.telegram.editMessageText(chatId, statusMessageId, undefined, `🚀 Видео (${fileSizeMB.toFixed(1)}МБ) готово! Отправляю...`);
+                    await bot.telegram.editMessageText(chatId, statusMessageId, undefined, `🚀 Медиа (${fileSizeMB.toFixed(1)}МБ) готово! Отправляю...`);
                 } catch (e) { }
             }
 
@@ -531,18 +725,18 @@ app.post('/api/download', async (req, res) => {
                     if (format === 'audio') await bot.telegram.sendAudio(chatId, { source: filePath });
                     else await bot.telegram.sendVideo(chatId, { source: filePath });
                 } else {
-                    // ГЛУБОКАЯ ОПТИМИЗАЦИЯ: Параллельная загрузка через MTProto
                     const toUpload = new CustomFile(path.basename(filePath), statsInfo.size, filePath);
                     const uploadedFile = await client.uploadFile({
                         file: toUpload,
-                        workers: 8, // Снижено с 32 для предотвращения OOM
+                        workers: 8,
                     });
 
-                    await client.sendFile(parseInt(chatId), {
+                    const entity = await client.getEntity(parseInt(chatId));
+                    await client.sendFile(entity, {
                         file: uploadedFile,
                         video: format !== 'audio',
                         supportsStreaming: true,
-                        caption: `🎬 ${titleStore[jobId]}\n\nРазмер: ${fileSizeMB.toFixed(1)} МБ`,
+                        caption: `🎬 ${titleStore[jobId] || 'видео'}\n\nРазмер: ${fileSizeMB.toFixed(1)} МБ`,
                     });
                 }
                 if (statusMessageId) {
@@ -557,7 +751,6 @@ app.post('/api/download', async (req, res) => {
 
                 if (statusMessageId) {
                     try { await bot.telegram.editMessageText(chatId, statusMessageId, undefined, failMsg); } catch (e) {
-                        // Если не удалось отредактировать, пробуем отправить новое
                         try { await bot.telegram.sendMessage(chatId, failMsg); } catch (e2) { }
                     }
                 } else {
@@ -566,12 +759,122 @@ app.post('/api/download', async (req, res) => {
             }
 
             setTimeout(() => {
-                if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+                if (fs.existsSync(filePath)) {
+                    try { fs.unlinkSync(filePath); } catch (e) { }
+                }
                 delete progressStore[jobId];
                 delete titleStore[jobId];
+                delete chatStore[jobId];
             }, 60 * 60 * 1000);
         });
-    } catch (e) { console.error(e); delete jobStore[jobId]; }
+    } catch (e) {
+        console.error(e);
+        if (progressInterval) clearInterval(progressInterval);
+        delete jobStore[jobId];
+        delete chatStore[jobId];
+        delete progressStore[jobId];
+        delete titleStore[jobId];
+    }
+}
+
+// Обработчик ссылок, присланных сообщением в бот
+bot.on('text', async (ctx) => {
+    const text = ctx.message.text ? ctx.message.text.trim() : '';
+    const urlRegex = /(https?:\/\/[^\s]+)/gi;
+    const urlMatch = text.match(urlRegex);
+    
+    if (urlMatch) {
+        const url = urlMatch[0];
+        const chatId = ctx.chat.id;
+        
+        // Проверяем лимит параллельных задач
+        if (Object.keys(jobStore).length >= MAX_CONCURRENT_JOBS) {
+            ctx.reply('⚠️ Извините, сейчас сервер перегружен (выполняется слишком много параллельных загрузок). Пожалуйста, попробуйте через пару минут.').catch(() => {});
+            return;
+        }
+        
+        // 1. Попытка быстро узнать заголовок видео
+        let title = 'видео';
+        try {
+            title = await new Promise((resolve) => {
+                const args = [
+                    '--js-runtime', 'node',
+                    '-j',
+                    '--skip-download',
+                    '--no-playlist',
+                    '--no-check-certificate',
+                    '--prefer-free-formats',
+                    '--youtube-skip-dash-manifest',
+                    url
+                ];
+                const cookiesPath = path.join(__dirname, 'cookies.txt');
+                if (fs.existsSync(cookiesPath)) args.unshift('--cookies', cookiesPath);
+                
+                const ytDlp = spawn('yt-dlp', args);
+                let out = '';
+                ytDlp.stdout.on('data', (d) => { out += d.toString(); });
+                ytDlp.on('close', () => {
+                    try {
+                        const i = JSON.parse(out);
+                        resolve(i.title || 'видео');
+                    } catch (e) {
+                        resolve('видео');
+                    }
+                });
+                setTimeout(() => {
+                    try { ytDlp.kill('SIGKILL'); } catch(e){}
+                    resolve('видео');
+                }, 3000); // Ограничиваем получение названия 3 секундами
+            });
+        } catch (e) {
+            console.error("Ошибка при получении названия для сообщения:", e.message);
+        }
+        
+        // Создаем временную задачу ожидания формата
+        const pendingId = randomUUID();
+        pendingDownloads[pendingId] = { url, chatId, title };
+        
+        // Очищаем через 10 минут
+        setTimeout(() => {
+            if (pendingDownloads[pendingId]) delete pendingDownloads[pendingId];
+        }, 10 * 60 * 1000);
+
+        // Отправляем меню выбора формата и качества
+        await ctx.reply(`🎬 <b>Выберите формат скачивания:</b>\n\n📝 Название: <i>${title}</i>`, {
+            parse_mode: 'HTML',
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: '🎬 Видео 1080p', callback_data: `dl_${pendingId}_video_1080` },
+                        { text: '🎬 Видео 720p', callback_data: `dl_${pendingId}_video_720` }
+                    ],
+                    [
+                        { text: '🎬 Видео 480p', callback_data: `dl_${pendingId}_video_480` },
+                        { text: '🎵 Аудио (MP3)', callback_data: `dl_${pendingId}_audio` }
+                    ]
+                ]
+            }
+        }).catch(() => {});
+    } else {
+        if (text.startsWith('/')) return; // Игнорируем команды
+        ctx.reply('Отправьте мне ссылку на видео (например, с YouTube, Rutube, TikTok и др.), и я скачаю его для вас! 🎬').catch(() => {});
+    }
+});
+
+// API для скачивания
+app.post('/api/download', async (req, res) => {
+    const { url, chatId, format, quality, title } = req.body;
+    
+    // Проверяем лимит параллельных задач
+    if (Object.keys(jobStore).length >= MAX_CONCURRENT_JOBS) {
+        return res.status(429).json({ error: 'Сервер перегружен. Пожалуйста, подождите завершения текущих загрузок.' });
+    }
+
+    const jobId = randomUUID();
+    res.json({ jobId });
+    
+    // Запускаем асинхронную загрузку
+    startDownloadJob({ url, chatId, format, quality, title, jobId });
 });
 
 app.post('/api/cancel', async (req, res) => {
