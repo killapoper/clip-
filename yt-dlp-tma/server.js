@@ -257,8 +257,63 @@ setInterval(async () => {
     });
 }, 15 * 60 * 1000);
 
+// Функция генерации выдуманной статистики (меняется каждые 4 минуты)
+const getSeededStats = () => {
+    const now = Date.now();
+    // Округляем время до 4 минут (240 000 мс)
+    const seedTime = Math.floor(now / (4 * 60 * 1000));
+    
+    // Псевдогенератор случайных чисел на основе сида
+    const pseudoRandom = (seed) => {
+        const x = Math.sin(seed) * 10000;
+        return x - Math.floor(x);
+    };
+
+    const getRandomRange = (min, max, seedOffset) => {
+        const rand = pseudoRandom(seedTime + seedOffset);
+        return Math.floor(rand * (max - min + 1)) + min;
+    };
+
+    const totalUsers = getRandomRange(1113, 1700, 1);
+    const dau = getRandomRange(117, 273, 2);
+    const mau = getRandomRange(810, 1375, 3);
+    const downloadsPerDay = getRandomRange(240, 580, 4);
+    const serverLoad = getRandomRange(12, 73, 5);
+    const processingVideos = getRandomRange(0, 8, 6);
+
+    return {
+        totalUsers,
+        dau,
+        mau,
+        downloadsPerDay,
+        serverLoad,
+        processingVideos
+    };
+};
+
+// Команда /stats
+bot.command('stats', async (ctx) => {
+    try {
+        const statsData = getSeededStats();
+        const message = `
+📊 <b>Статистика Klyro:</b>
+
+👥 Всего пользователей бота: <b>${statsData.totalUsers}</b>
+🔥 Активных за 24 часа (DAU): <b>${statsData.dau}</b>
+🌟 Активных за 30 дней (MAU): <b>${statsData.mau}</b>
+📥 Количество скачиваний в день: <b>${statsData.downloadsPerDay}</b>
+⚡️ Нагрузка сервера: <b>${statsData.serverLoad}%</b>
+🎬 Кол-во видео в обработке: <b>${statsData.processingVideos}</b>
+        `;
+        await ctx.replyWithHTML(message.trim());
+    } catch (err) {
+        console.error("Stats command error:", err);
+    }
+});
+
 // Команда /ping
 bot.command('ping', (ctx) => ctx.reply('pong! 🏓'));
+
 
 // Команда /start
 bot.command('start', async (ctx) => {
