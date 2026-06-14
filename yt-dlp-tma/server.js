@@ -397,7 +397,7 @@ bot.command('start', async (ctx) => {
             reply_markup: {
                 inline_keyboard: [[
                     {
-                        text: '🔗 Открыть Klyro',
+                        text: 'Открыть Klyro',
                         web_app: { url: webAppUrl },
                         icon_custom_emoji_id: '6028171274939797252'
                     }
@@ -615,7 +615,7 @@ async function startDownloadJob({ url, chatId, format = 'video', quality = '1080
                 reply_markup: {
                     inline_keyboard: [[
                         {
-                            text: '❌ Отменить',
+                            text: 'Отменить',
                             callback_data: `cancel_${jobId}`,
                             icon_custom_emoji_id: '5774077015388852135'
                         }
@@ -737,7 +737,7 @@ async function startDownloadJob({ url, chatId, format = 'video', quality = '1080
                                 reply_markup: {
                                     inline_keyboard: [[
                                         {
-                                            text: '❌ Отменить',
+                                            text: 'Отменить',
                                             callback_data: `cancel_${jobId}`,
                                             icon_custom_emoji_id: '5774077015388852135'
                                         }
@@ -963,12 +963,12 @@ bot.on('text', async (ctx) => {
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: '1️⃣ Видео 1080p', callback_data: `dl_${pendingId}_video_1080`, icon_custom_emoji_id: '5794164805065514131' },
-                        { text: '2️⃣ Видео 720p', callback_data: `dl_${pendingId}_video_720`, icon_custom_emoji_id: '5794085322400733645' }
+                        { text: 'Видео 1080p', callback_data: `dl_${pendingId}_video_1080`, icon_custom_emoji_id: '5794164805065514131' },
+                        { text: 'Видео 720p', callback_data: `dl_${pendingId}_video_720`, icon_custom_emoji_id: '5794085322400733645' }
                     ],
                     [
-                        { text: '3️⃣ Видео 480p', callback_data: `dl_${pendingId}_video_480`, icon_custom_emoji_id: '5794280000383358988' },
-                        { text: '📁 Аудио (MP3)', callback_data: `dl_${pendingId}_audio`, icon_custom_emoji_id: '5805506958995758422' }
+                        { text: 'Видео 480p', callback_data: `dl_${pendingId}_video_480`, icon_custom_emoji_id: '5794280000383358988' },
+                        { text: 'Аудио (MP3)', callback_data: `dl_${pendingId}_audio`, icon_custom_emoji_id: '5805506958995758422' }
                     ]
                 ]
             }
