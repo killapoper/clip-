@@ -195,6 +195,80 @@ function trackLink(url) {
         saveStats();
     } catch (e) { }
 }
+
+// --- СИСТЕМА РАССЫЛОК ---
+const broadcastsFile = path.join(__dirname, 'data', 'broadcasts.json');
+let broadcastState = {
+    step: 'idle', // 'idle', 'awaiting_content', 'awaiting_time', 'awaiting_confirm', 'awaiting_confirm_sched'
+    contentType: null, // 'text', 'audio', 'media'
+    message: null,
+    scheduleTime: null
+};
+
+function loadScheduledBroadcasts() {
+    try {
+        if (fs.existsSync(broadcastsFile)) {
+            const stat = fs.statSync(broadcastsFile);
+            if (stat.isFile()) {
+                return JSON.parse(fs.readFileSync(broadcastsFile, 'utf8'));
+            }
+        }
+    } catch (e) {
+        console.error("Error loading broadcasts:", e);
+    }
+    return [];
+}
+
+function saveScheduledBroadcasts(list) {
+    try {
+        fs.writeFileSync(broadcastsFile, JSON.stringify(list, null, 2));
+    } catch (e) {
+        console.error("Error saving broadcasts:", e);
+    }
+}
+
+async function runBroadcast(fromChatId, messageId) {
+    const users = stats.allTimeUsers || [];
+    let successCount = 0;
+    let failCount = 0;
+    
+    for (const userId of users) {
+        try {
+            await bot.telegram.copyMessage(userId, fromChatId, messageId);
+            successCount++;
+        } catch (err) {
+            console.error(`Broadcast failed for user ${userId}:`, err.message);
+            failCount++;
+        }
+        await new Promise(resolve => setTimeout(resolve, 40)); // обход лимитов (30/сек)
+    }
+    
+    if (adminId) {
+        await bot.telegram.sendMessage(adminId, `📢 <b>Рассылка завершена!</b>\n\n✅ Успешно доставлено: <b>${successCount}</b>\n❌ Ошибок: <b>${failCount}</b>`, { parse_mode: 'HTML' }).catch(() => {});
+    }
+}
+
+// Запуск фоновой проверки запланированных рассылок (каждые 30 секунд)
+setInterval(async () => {
+    const list = loadScheduledBroadcasts();
+    const now = Date.now();
+    let changed = false;
+    
+    for (let i = 0; i < list.length; i++) {
+        const item = list[i];
+        if (new Date(item.scheduleTime).getTime() <= now) {
+            console.log(`[📢] Запуск запланированной рассылки от ${item.createdAt}`);
+            runBroadcast(item.fromChatId, item.messageId);
+            list.splice(i, 1);
+            i--;
+            changed = true;
+        }
+    }
+    
+    if (changed) {
+        saveScheduledBroadcasts(list);
+    }
+}, 30 * 1000);
 // ----------------------------------------------
 
 // Хранилища
@@ -351,6 +425,110 @@ const getSeededStats = () => {
 };
 
 
+async function handleBroadcastInput(ctx) {
+    if (broadcastState.step === 'awaiting_content') {
+        const msg = ctx.message;
+        
+        let isValid = false;
+        if (broadcastState.contentType === 'text') {
+            if (msg.text) isValid = true;
+        } else if (broadcastState.contentType === 'audio') {
+            if (msg.audio) isValid = true;
+        } else if (broadcastState.contentType === 'media') {
+            if (msg.photo || msg.video || msg.animation || msg.document) isValid = true;
+        }
+        
+        if (!isValid) {
+            let expected = 'текстовое сообщение';
+            if (broadcastState.contentType === 'audio') expected = 'аудиозапись';
+            if (broadcastState.contentType === 'media') expected = 'фото, видео или GIF';
+            return ctx.reply(`❌ <b>Неверный тип контента!</b>\n\nПожалуйста, отправьте именно <b>${expected}</b> или нажмите «Отменить» ниже:`, {
+                parse_mode: 'HTML',
+                reply_markup: {
+                    inline_keyboard: [[
+                        { text: '❌ Отменить', callback_data: 'admin_broadcast_cancel' }
+                    ]]
+                }
+            });
+        }
+        
+        broadcastState.message = msg;
+        broadcastState.step = 'awaiting_confirm';
+        
+        await ctx.reply('✨ <b>Предпросмотр сообщения:</b>', { parse_mode: 'HTML' });
+        await ctx.telegram.copyMessage(ctx.chat.id, msg.chat.id, msg.message_id);
+        
+        return ctx.reply('Сообщение готово к рассылке. Выберите следующее действие:', {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: '🚀 Отправить сейчас', callback_data: 'broadcast_send_now' },
+                        { text: '⏰ Запланировать', callback_data: 'broadcast_schedule' }
+                    ],
+                    [
+                        { text: '❌ Отменить', callback_data: 'admin_broadcast_cancel' }
+                    ]
+                ]
+            }
+        });
+    }
+    
+    if (broadcastState.step === 'awaiting_time') {
+        const text = ctx.message.text ? ctx.message.text.trim() : '';
+        let targetDate = null;
+        
+        if (/^\d{2}:\d{2}$/.test(text)) {
+            const todayStr = new Date().toISOString().split('T')[0];
+            targetDate = new Date(`${todayStr}T${text}:00`);
+        } else {
+            targetDate = new Date(text.replace(' ', 'T'));
+        }
+        
+        if (!targetDate || isNaN(targetDate.getTime()) || targetDate.getTime() <= Date.now()) {
+            return ctx.reply(`❌ <b>Неверный формат времени или указано время в прошлом!</b>\n\nПожалуйста, отправьте время в формате:\n<code>ГГГГ-ММ-ДД ЧЧ:ММ</code> (например, <code>2026-06-15 18:00</code>):\n\n<i>Текущее время сервера: ${new Date().toLocaleString('ru-RU')}</i>`, {
+                parse_mode: 'HTML',
+                reply_markup: {
+                    inline_keyboard: [[
+                        { text: '❌ Отменить', callback_data: 'admin_broadcast_cancel' }
+                    ]]
+                }
+            });
+        }
+        
+        broadcastState.scheduleTime = targetDate;
+        broadcastState.step = 'awaiting_confirm_sched';
+        
+        return ctx.reply(`📅 <b>Рассылка запланирована на:</b>\n<code>${targetDate.toLocaleString('ru-RU')}</code>\n\nВсе верно?`, {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: '✅ Подтвердить планирование', callback_data: 'broadcast_confirm_sched' }
+                    ],
+                    [
+                        { text: '❌ Отменить', callback_data: 'admin_broadcast_cancel' }
+                    ]
+                ]
+            }
+        });
+    }
+}
+
+bot.use(async (ctx, next) => {
+    if (ctx.from && String(ctx.from.id) === String(adminId) && broadcastState.step !== 'idle') {
+        if (ctx.callbackQuery) {
+            return next();
+        }
+        if (ctx.message && ctx.message.text && ctx.message.text.startsWith('/')) {
+            broadcastState = { step: 'idle', contentType: null, message: null, scheduleTime: null };
+            return next();
+        }
+        if (ctx.message) {
+            return handleBroadcastInput(ctx);
+        }
+    }
+    return next();
+});
+
 // Команда /stats
 bot.command('stats', async (ctx) => {
     const userId = ctx.from.id;
@@ -454,6 +632,7 @@ CPU: ${usage.cpuUsage.toFixed(1)}% | RAM: ${usage.ramUsage.toFixed(1)}%
 
         await ctx.replyWithHTML(report, Markup.inlineKeyboard([
             [Markup.button.callback('🧹 Очистить диск', 'admin_clear_disk')],
+            [Markup.button.callback('📢 Рассылка', 'admin_broadcast_menu')],
             [Markup.button.callback('🛑 STOP (ЭКСТРЕННО)', 'admin_emergency_stop')]
         ]));
     } catch (err) {
@@ -519,6 +698,233 @@ bot.action('admin_emergency_stop', async (ctx) => {
         console.error(err);
         await ctx.answerCbQuery('Ошибка при остановке');
     }
+});
+
+// --- CALLBACK-ОБРАБОТЧИКИ ДЛЯ РАССЫЛКИ ---
+
+// Меню рассылки
+bot.action('admin_broadcast_menu', async (ctx) => {
+    if (String(ctx.from.id) !== String(adminId)) return ctx.answerCbQuery('У вас нет прав');
+    
+    broadcastState = { step: 'awaiting_content_type', contentType: null, message: null, scheduleTime: null };
+    
+    await ctx.editMessageText('📢 <b>Создание рассылки</b>\n\nВыберите тип сообщения, которое вы хотите разослать всем пользователям:', {
+        parse_mode: 'HTML',
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: '📝 Текст', callback_data: 'broadcast_type:text' },
+                    { text: '🎵 Аудио', callback_data: 'broadcast_type:audio' }
+                ],
+                [
+                    { text: '🎬 Медиа (Фото/Видео/GIF)', callback_data: 'broadcast_type:media' }
+                ],
+                [
+                    { text: '❌ Отменить', callback_data: 'admin_broadcast_cancel' }
+                ]
+            ]
+        }
+    });
+});
+
+// Отмена рассылки
+bot.action('admin_broadcast_cancel', async (ctx) => {
+    if (String(ctx.from.id) !== String(adminId)) return ctx.answerCbQuery('У вас нет прав');
+    
+    broadcastState = { step: 'idle', contentType: null, message: null, scheduleTime: null };
+    await ctx.answerCbQuery('Создание рассылки отменено.');
+    
+    try {
+        const today = new Date().toISOString().split('T')[0];
+        const dailyCount = (stats.dailyUsers[today] || []).length;
+        const allTimeCount = (stats.allTimeUsers || []).length;
+        const downloadsCount = stats.totalDownloads || 0;
+        const trafficGB = ((stats.totalTrafficBytes || 0) / (1024 * 1024 * 1024)).toFixed(2);
+        const sortedLinks = Object.entries(stats.topLinks || {})
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([domain, count], i) => `${i + 1}. <b>${domain}</b>: ${count} раз`)
+            .join('\n');
+        const usage = getSystemUsage();
+        const diskStr = usage.diskUsageGB ? usage.diskUsageGB.toFixed(2) : "0.00";
+        const activeJobsCount = Object.keys(jobStore).length;
+        
+        const report = `
+📊 <b>Админ-панель Klyro</b>
+
+👥 Юзеров сегодня: <b>${dailyCount}</b>
+👥 Всего юзеров: <b>${allTimeCount}</b>
+📥 Всего загрузок: <b>${downloadsCount}</b>
+💾 Общий трафик: <b>${trafficGB} ГБ</b>
+
+⚡️ Активных загрузок: <b>${activeJobsCount} / ${MAX_CONCURRENT_JOBS}</b>
+
+🚀 <b>Топ платформ:</b>
+${sortedLinks || 'Пока нет данных'}
+
+🖥 <b>Сервер:</b>
+CPU: ${usage.cpuUsage.toFixed(1)}% | RAM: ${usage.ramUsage.toFixed(1)}%
+Диск (downloads): ${diskStr} ГБ
+        `;
+        
+        await ctx.editMessageText(report, {
+            parse_mode: 'HTML',
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: '🧹 Очистить диск', callback_data: 'admin_clear_disk' }
+                    ],
+                    [
+                        { text: '📢 Рассылка', callback_data: 'admin_broadcast_menu' }
+                    ],
+                    [
+                        { text: '🛑 STOP (ЭКСТРЕННО)', callback_data: 'admin_emergency_stop' }
+                    ]
+                ]
+            }
+        });
+    } catch (e) {
+        await ctx.reply('Админка закрыта.');
+    }
+});
+
+// Выбор типа рассылки
+bot.action(/^broadcast_type:(.+)$/, async (ctx) => {
+    if (String(ctx.from.id) !== String(adminId)) return ctx.answerCbQuery('У вас нет прав');
+    
+    const type = ctx.match[1];
+    broadcastState.contentType = type;
+    broadcastState.step = 'awaiting_content';
+    
+    let typeName = 'текст';
+    let instruction = 'Пожалуйста, отправьте текстовое сообщение с вашей рассылкой.';
+    if (type === 'audio') {
+        typeName = 'аудио';
+        instruction = 'Пожалуйста, отправьте аудиозапись для рассылки.';
+    } else if (type === 'media') {
+        typeName = 'медиа';
+        instruction = 'Пожалуйста, отправьте фото, видео или GIF для рассылки (можно с текстовым описанием).';
+    }
+    
+    await ctx.editMessageText(`📥 <b>Создание рассылки: ${typeName}</b>\n\n${instruction}\n\n<i>Отправьте сообщение боту. Вы также можете использовать встроенное форматирование.</i>`, {
+        parse_mode: 'HTML',
+        reply_markup: {
+            inline_keyboard: [[
+                { text: '❌ Отменить', callback_data: 'admin_broadcast_cancel' }
+            ]]
+        }
+    });
+});
+
+// Действие: Отправить сейчас
+bot.action('broadcast_send_now', async (ctx) => {
+    if (String(ctx.from.id) !== String(adminId)) return ctx.answerCbQuery('У вас нет прав');
+    if (!broadcastState.message) return ctx.reply('❌ Ошибка: Сообщение рассылки не найдено.');
+    
+    await ctx.reply('🚀 <b>Рассылка запущена!</b>\nПожалуйста, подождите, бот отправляет сообщения пользователям...', { parse_mode: 'HTML' });
+    
+    const fromChatId = broadcastState.message.chat.id;
+    const messageId = broadcastState.message.message_id;
+    
+    broadcastState = { step: 'idle', contentType: null, message: null, scheduleTime: null };
+    
+    runBroadcast(fromChatId, messageId);
+});
+
+// Действие: Запланировать
+bot.action('broadcast_schedule', async (ctx) => {
+    if (String(ctx.from.id) !== String(adminId)) return ctx.answerCbQuery('У вас нет прав');
+    
+    await ctx.editMessageText(`⏰ <b>Планирование рассылки</b>\n\nВыберите, через какое время отправить рассылку, или укажите время вручную:\n\n<i>Текущее время сервера: ${new Date().toLocaleString('ru-RU')}</i>`, {
+        parse_mode: 'HTML',
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: '⏱ Через 10 минут', callback_data: 'broadcast_sched_val:10m' },
+                    { text: '⏱ Через 1 час', callback_data: 'broadcast_sched_val:1h' }
+                ],
+                [
+                    { text: '⏱ Через 3 часа', callback_data: 'broadcast_sched_val:3h' },
+                    { text: '⏱ Через 12 часов', callback_data: 'broadcast_sched_val:12h' }
+                ],
+                [
+                    { text: '📅 Через 1 день', callback_data: 'broadcast_sched_val:1d' },
+                    { text: '📝 Указать время вручную', callback_data: 'broadcast_sched_val:manual' }
+                ],
+                [
+                    { text: '❌ Отменить', callback_data: 'admin_broadcast_cancel' }
+                ]
+            ]
+        }
+    });
+});
+
+// Выбор быстрого интервала или вручную
+bot.action(/^broadcast_sched_val:(.+)$/, async (ctx) => {
+    if (String(ctx.from.id) !== String(adminId)) return ctx.answerCbQuery('У вас нет прав');
+    
+    const val = ctx.match[1];
+    
+    if (val === 'manual') {
+        broadcastState.step = 'awaiting_time';
+        await ctx.editMessageText(`📝 <b>Укажите время вручную</b>\n\nПожалуйста, пришлите сообщение с точной датой и временем в формате:\n<code>ГГГГ-ММ-ДД ЧЧ:ММ</code>\n(например: <code>2026-06-15 14:30</code>)\n\n<i>Текущее время сервера: ${new Date().toLocaleString('ru-RU')}</i>`, {
+            parse_mode: 'HTML',
+            reply_markup: {
+                inline_keyboard: [[
+                    { text: '❌ Отменить', callback_data: 'admin_broadcast_cancel' }
+                ]]
+            }
+        });
+        return;
+    }
+    
+    let offset = 0;
+    if (val === '10m') offset = 10 * 60 * 1000;
+    else if (val === '1h') offset = 60 * 60 * 1000;
+    else if (val === '3h') offset = 3 * 60 * 60 * 1000;
+    else if (val === '12h') offset = 12 * 60 * 60 * 1000;
+    else if (val === '1d') offset = 24 * 60 * 60 * 1000;
+    
+    const targetDate = new Date(Date.now() + offset);
+    broadcastState.scheduleTime = targetDate;
+    broadcastState.step = 'awaiting_confirm_sched';
+    
+    await ctx.editMessageText(`📅 <b>Рассылка запланирована на:</b>\n<code>${targetDate.toLocaleString('ru-RU')}</code>\n\nВсе верно?`, {
+        parse_mode: 'HTML',
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: '✅ Подтвердить планирование', callback_data: 'broadcast_confirm_sched' }
+                ],
+                [
+                    { text: '❌ Отменить', callback_data: 'admin_broadcast_cancel' }
+                ]
+            ]
+        }
+    });
+});
+
+// Действие: Подтвердить планирование
+bot.action('broadcast_confirm_sched', async (ctx) => {
+    if (String(ctx.from.id) !== String(adminId)) return ctx.answerCbQuery('У вас нет прав');
+    if (!broadcastState.message || !broadcastState.scheduleTime) {
+        return ctx.reply('❌ Ошибка: Сообщение или время не найдены.');
+    }
+    
+    const list = loadScheduledBroadcasts();
+    list.push({
+        id: randomUUID(),
+        fromChatId: broadcastState.message.chat.id,
+        messageId: broadcastState.message.message_id,
+        scheduleTime: broadcastState.scheduleTime.toISOString(),
+        createdAt: new Date().toISOString()
+    });
+    saveScheduledBroadcasts(list);
+    
+    const timeStr = broadcastState.scheduleTime.toLocaleString('ru-RU');
+    broadcastState = { step: 'idle', contentType: null, message: null, scheduleTime: null };
+    
+    await ctx.editMessageText(`✅ <b>Успешно запланировано!</b>\n\nРассылка будет автоматически отправлена: <code>${timeStr}</code>`, { parse_mode: 'HTML' });
 });
 
 // Действие: Отмена конкретной загрузки пользователем
