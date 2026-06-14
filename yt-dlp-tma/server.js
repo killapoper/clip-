@@ -378,7 +378,7 @@ bot.command('ping', (ctx) => ctx.reply('pong! 🏓'));
 // Команда /start
 bot.command('start', async (ctx) => {
     trackUser(ctx.from.id);
-    await ctx.reply('Добро пожаловать в Klyro 2.0! 👋\n\nБот готов скачивать фильмы до 2 ГБ напрямую в чат.',
+    await ctx.replyWithHTML(`<tg-emoji emoji-id="5938537205847822613">🏡</tg-emoji> <b>Добро пожаловать в Klyro!</b> <tg-emoji emoji-id="5985478698722136468">👋</tg-emoji>\n\nБот готов скачивать медиафайлы напрямую в чат.`,
         Markup.inlineKeyboard([Markup.button.webApp('🚀 Открыть Klyro', webAppUrl)]));
 });
 
@@ -452,7 +452,7 @@ bot.action('admin_clear_disk', async (ctx) => {
             } catch (e) { }
         });
         await ctx.answerCbQuery(`Очищено файлов: ${count}`);
-        await ctx.editMessageText(`✅ Диск очищен. Удалено файлов: ${count}`);
+        await ctx.editMessageText(`<tg-emoji emoji-id="5774022692642492953">✅</tg-emoji> Диск очищен. Удалено файлов: ${count}`, { parse_mode: 'HTML' });
     } catch (err) {
         console.error(err);
         await ctx.answerCbQuery('Ошибка при очистке');
@@ -516,7 +516,7 @@ bot.action(/^cancel_(.+)$/, async (ctx) => {
     
     try {
         await ctx.answerCbQuery('Загрузка отменена');
-        await ctx.editMessageText('❌ Загрузка отменена пользователем.');
+        await ctx.editMessageText('<tg-emoji emoji-id="5774077015388852135">❌</tg-emoji> Загрузка отменена пользователем.', { parse_mode: 'HTML' });
     } catch (e) { }
 });
 
@@ -586,7 +586,8 @@ async function startDownloadJob({ url, chatId, format = 'video', quality = '1080
     try {
         let statusMessageId = null;
         try {
-            const statusMsg = await bot.telegram.sendMessage(chatId, '🎬 Готовлю ваше медиа...', {
+            const statusMsg = await bot.telegram.sendMessage(chatId, '<tg-emoji emoji-id="5944753741512052670">📷</tg-emoji> Готовлю ваше медиа...', {
+                parse_mode: 'HTML',
                 reply_markup: {
                     inline_keyboard: [[
                         { text: '🛑 Отменить', callback_data: `cancel_${jobId}` }
@@ -702,8 +703,9 @@ async function startDownloadJob({ url, chatId, format = 'video', quality = '1080
                             chatId, 
                             statusMessageId, 
                             undefined, 
-                            `🎬 Скачиваю ваше медиа: ${Math.floor(currentProgress)}%...`,
+                            `<tg-emoji emoji-id="5944753741512052670">📷</tg-emoji> Скачиваю ваше медиа: ${Math.floor(currentProgress)}%...`,
                             {
+                                parse_mode: 'HTML',
                                 reply_markup: {
                                     inline_keyboard: [[
                                         { text: '🛑 Отменить', callback_data: `cancel_${jobId}` }
@@ -730,7 +732,7 @@ async function startDownloadJob({ url, chatId, format = 'video', quality = '1080
             if (code !== 0) {
                 console.error(`🔴 [yt-dlp error] Code: ${code} | JobId: ${jobId}`);
                 console.error(`Stderr: ${ytStderr}`);
-                try { await bot.telegram.editMessageText(chatId, statusMessageId, undefined, `❌ Ошибка загрузки.\n\nДетали: ${ytStderr.substring(0, 100)}...`); } catch (e) { }
+                try { await bot.telegram.editMessageText(chatId, statusMessageId, undefined, `<tg-emoji emoji-id="5774077015388852135">❌</tg-emoji> Ошибка загрузки.\n\nДетали: ${ytStderr.substring(0, 100)}...`, { parse_mode: 'HTML' }); } catch (e) { }
                 delete chatStore[jobId];
                 delete progressStore[jobId];
                 delete titleStore[jobId];
@@ -751,7 +753,7 @@ async function startDownloadJob({ url, chatId, format = 'video', quality = '1080
 
             if (downloadedFiles.length === 0) {
                 console.error(`🔴 [Error] Файл для задания ${jobId} не найден после завершения загрузки.`);
-                try { await bot.telegram.editMessageText(chatId, statusMessageId, undefined, `❌ Ошибка: Файл не найден после загрузки.`); } catch (e) { }
+                try { await bot.telegram.editMessageText(chatId, statusMessageId, undefined, `<tg-emoji emoji-id="5774077015388852135">❌</tg-emoji> Ошибка: Файл не найден после загрузки.`, { parse_mode: 'HTML' }); } catch (e) { }
                 delete chatStore[jobId];
                 delete progressStore[jobId];
                 delete titleStore[jobId];
@@ -764,7 +766,7 @@ async function startDownloadJob({ url, chatId, format = 'video', quality = '1080
 
             if (statsInfo.size === 0) {
                 console.error(`🔴 [Error] Файл ${filePath} имеет размер 0 байт.`);
-                try { await bot.telegram.editMessageText(chatId, statusMessageId, undefined, `❌ Ошибка: Скачанный файл пуст (0 байт).`); } catch (e) { }
+                try { await bot.telegram.editMessageText(chatId, statusMessageId, undefined, `<tg-emoji emoji-id="5774077015388852135">❌</tg-emoji> Ошибка: Скачанный файл пуст (0 байт).`, { parse_mode: 'HTML' }); } catch (e) { }
                 if (fs.existsSync(filePath)) {
                     try { fs.unlinkSync(filePath); } catch (e) { }
                 }
@@ -780,7 +782,7 @@ async function startDownloadJob({ url, chatId, format = 'video', quality = '1080
 
             if (statusMessageId) {
                 try {
-                    await bot.telegram.editMessageText(chatId, statusMessageId, undefined, `🚀 Медиа (${fileSizeMB.toFixed(1)}МБ) готово! Отправляю...`);
+                    await bot.telegram.editMessageText(chatId, statusMessageId, undefined, `<tg-emoji emoji-id="6043874504302661409">📤</tg-emoji> Медиа (${fileSizeMB.toFixed(1)}МБ) готово! Отправляю...`, { parse_mode: 'HTML' });
                 } catch (e) { }
             }
 
@@ -971,7 +973,7 @@ app.post('/api/cancel', async (req, res) => {
         // Уведомление об отмене
         const cid = chatStore[jobId];
         if (cid) {
-            bot.telegram.sendMessage(cid, '❌ Загрузка отменена.').catch(() => { });
+            bot.telegram.sendMessage(cid, '<tg-emoji emoji-id="5774077015388852135">❌</tg-emoji> Загрузка отменена.', { parse_mode: 'HTML' }).catch(() => { });
         }
     }
     delete progressStore[jobId];
