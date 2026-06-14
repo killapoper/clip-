@@ -613,28 +613,38 @@ bot.command('admin', async (ctx) => {
 
         const activeJobsCount = Object.keys(jobStore).length;
         const report = `
-📊 <b>Админ-панель Klyro</b>
+<tg-emoji emoji-id="5397838301166078960">👤</tg-emoji> <b>Админ-панель Klyro</b>
 
-👥 Юзеров сегодня: <b>${dailyCount}</b>
-👥 Всего юзеров: <b>${allTimeCount}</b>
-📥 Всего загрузок: <b>${downloadsCount}</b>
-💾 Общий трафик: <b>${trafficGB} ГБ</b>
+<tg-emoji emoji-id="5400079672799165880">👥</tg-emoji> Юзеров сегодня: <b>${dailyCount}</b>
+<tg-emoji emoji-id="5400079672799165880">👥</tg-emoji> Всего юзеров: <b>${allTimeCount}</b>
+<tg-emoji emoji-id="5399862394698629054">✉️</tg-emoji> Всего загрузок: <b>${downloadsCount}</b>
+<tg-emoji emoji-id="5805506958995758422">📁</tg-emoji> Общий трафик: <b>${trafficGB} ГБ</b>
 
-⚡️ Активных загрузок: <b>${activeJobsCount} / ${MAX_CONCURRENT_JOBS}</b>
+<tg-emoji emoji-id="5399841684366329533">↖️</tg-emoji> Активных загрузок: <b>${activeJobsCount} / ${MAX_CONCURRENT_JOBS}</b>
 
-🚀 <b>Топ платформ:</b>
+<tg-emoji emoji-id="6043874504302661409">📤</tg-emoji> <b>Топ платформ:</b>
 ${sortedLinks || 'Пока нет данных'}
 
-🖥 <b>Сервер:</b>
+<tg-emoji emoji-id="5397637648883940852">⏲️</tg-emoji> <b>Сервер:</b>
 CPU: ${usage.cpuUsage.toFixed(1)}% | RAM: ${usage.ramUsage.toFixed(1)}%
 Диск (downloads): ${diskStr} ГБ
         `;
 
-        await ctx.replyWithHTML(report, Markup.inlineKeyboard([
-            [Markup.button.callback('🧹 Очистить диск', 'admin_clear_disk')],
-            [Markup.button.callback('📢 Рассылка', 'admin_broadcast_menu')],
-            [Markup.button.callback('🛑 STOP (ЭКСТРЕННО)', 'admin_emergency_stop')]
-        ]));
+        await ctx.replyWithHTML(report, {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: '🧹 Очистить диск', callback_data: 'admin_clear_disk' }
+                    ],
+                    [
+                        { text: 'Рассылка', callback_data: 'admin_broadcast_menu', icon_custom_emoji_id: '6043874504302661409' }
+                    ],
+                    [
+                        { text: 'STOP (ЭКСТРЕННО)', callback_data: 'admin_emergency_stop', icon_custom_emoji_id: '5774077015388852135' }
+                    ]
+                ]
+            }
+        });
     } catch (err) {
         console.error("Admin command error:", err);
         await ctx.reply(`Ошибка при генерации отчета: ${err.message}`);
@@ -750,19 +760,19 @@ bot.action('admin_broadcast_cancel', async (ctx) => {
         const activeJobsCount = Object.keys(jobStore).length;
         
         const report = `
-📊 <b>Админ-панель Klyro</b>
+<tg-emoji emoji-id="5397838301166078960">👤</tg-emoji> <b>Админ-панель Klyro</b>
 
-👥 Юзеров сегодня: <b>${dailyCount}</b>
-👥 Всего юзеров: <b>${allTimeCount}</b>
-📥 Всего загрузок: <b>${downloadsCount}</b>
-💾 Общий трафик: <b>${trafficGB} ГБ</b>
+<tg-emoji emoji-id="5400079672799165880">👥</tg-emoji> Юзеров сегодня: <b>${dailyCount}</b>
+<tg-emoji emoji-id="5400079672799165880">👥</tg-emoji> Всего юзеров: <b>${allTimeCount}</b>
+<tg-emoji emoji-id="5399862394698629054">✉️</tg-emoji> Всего загрузок: <b>${downloadsCount}</b>
+<tg-emoji emoji-id="5805506958995758422">📁</tg-emoji> Общий трафик: <b>${trafficGB} ГБ</b>
 
-⚡️ Активных загрузок: <b>${activeJobsCount} / ${MAX_CONCURRENT_JOBS}</b>
+<tg-emoji emoji-id="5399841684366329533">↖️</tg-emoji> Активных загрузок: <b>${activeJobsCount} / ${MAX_CONCURRENT_JOBS}</b>
 
-🚀 <b>Топ платформ:</b>
+<tg-emoji emoji-id="6043874504302661409">📤</tg-emoji> <b>Топ платформ:</b>
 ${sortedLinks || 'Пока нет данных'}
 
-🖥 <b>Сервер:</b>
+<tg-emoji emoji-id="5397637648883940852">⏲️</tg-emoji> <b>Сервер:</b>
 CPU: ${usage.cpuUsage.toFixed(1)}% | RAM: ${usage.ramUsage.toFixed(1)}%
 Диск (downloads): ${diskStr} ГБ
         `;
@@ -775,10 +785,10 @@ CPU: ${usage.cpuUsage.toFixed(1)}% | RAM: ${usage.ramUsage.toFixed(1)}%
                         { text: '🧹 Очистить диск', callback_data: 'admin_clear_disk' }
                     ],
                     [
-                        { text: '📢 Рассылка', callback_data: 'admin_broadcast_menu' }
+                        { text: 'Рассылка', callback_data: 'admin_broadcast_menu', icon_custom_emoji_id: '6043874504302661409' }
                     ],
                     [
-                        { text: '🛑 STOP (ЭКСТРЕННО)', callback_data: 'admin_emergency_stop' }
+                        { text: 'STOP (ЭКСТРЕННО)', callback_data: 'admin_emergency_stop', icon_custom_emoji_id: '5774077015388852135' }
                     ]
                 ]
             }
