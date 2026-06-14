@@ -15,7 +15,7 @@ const adminId = parseInt(process.env.ADMIN_ID) || 0;
 
 const bot = new Telegraf(process.env.BOT_TOKEN, {
     telegram: {
-        apiRoot: process.env.TELEGRAM_API_ROOT || 'http://telegram-bot-api:8081'
+        apiRoot: process.env.TELEGRAM_API_ROOT || 'https://api.telegram.org'
     }
 });
 
@@ -778,38 +778,54 @@ async function startDownloadJob({ url, chatId, format = 'video', quality = '1080
             try {
                 const domain = webAppUrl ? webAppUrl.replace(/\/$/, '') : '';
                 const link = `${domain}/get/${encodeURIComponent(path.basename(filePath))}`;
-                const captionText = `🎬 <b>${titleStore[jobId] || (format === 'audio' ? 'аудио' : 'видео')}</b>\n\n💾 Размер: ${fileSizeMB.toFixed(1)} МБ\n\n👉 <a href="${link}">Прямая ссылка на скачивание</a>`;
 
-                if (format === 'audio') {
-                    await bot.telegram.sendAudio(chatId, { source: filePath }, {
-                        caption: captionText,
-                        parse_mode: 'HTML'
-                    });
+                if (fileSizeMB < 49.5) {
+                    const captionText = `🎬 <b>${titleStore[jobId] || (format === 'audio' ? 'аудио' : 'видео')}</b>\n\n💾 Размер: ${fileSizeMB.toFixed(1)} МБ\n\n👉 <a href="${link}">Прямая ссылка на скачивание</a>`;
+                    
+                    if (format === 'audio') {
+                        await bot.telegram.sendAudio(chatId, { source: filePath }, {
+                            caption: captionText,
+                            parse_mode: 'HTML'
+                        });
+                    } else {
+                        await bot.telegram.sendVideo(chatId, { source: filePath }, {
+                            supports_streaming: true,
+                            caption: captionText,
+                            parse_mode: 'HTML'
+                        });
+                    }
+                    if (statusMessageId) {
+                        try { await bot.telegram.deleteMessage(chatId, statusMessageId); } catch (e) { }
+                    }
                 } else {
-                    await bot.telegram.sendVideo(chatId, { source: filePath }, {
-                        supports_streaming: true,
-                        caption: captionText,
-                        parse_mode: 'HTML'
-                    });
-                }
-                if (statusMessageId) {
-                    try { await bot.telegram.deleteMessage(chatId, statusMessageId); } catch (e) { }
+                    // Большой файл: отправляем красивое уведомление со ссылкой на скачивание
+                    const msgText = `🎬 <b>${titleStore[jobId] || (format === 'audio' ? 'аудио' : 'видео')}</b>\n\n💾 Размер файла: <b>${fileSizeMB.toFixed(1)} МБ</b>\n\nℹ️ <i>Из-за ограничений Telegram файлы крупнее 50 МБ бот отправляет в виде прямой ссылки для автоматического скачивания на ваше устройство:</i>\n\n👉 <a href="${link}">Скачать медиафайл</a>`;
+                    
+                    if (statusMessageId) {
+                        try {
+                            await bot.telegram.editMessageText(chatId, statusMessageId, undefined, msgText, { parse_mode: 'HTML' });
+                        } catch (e) {
+                            try { await bot.telegram.sendMessage(chatId, msgText, { parse_mode: 'HTML' }); } catch (e2) { }
+                        }
+                    } else {
+                        await bot.telegram.sendMessage(chatId, msgText, { parse_mode: 'HTML' });
+                    }
                 }
             } catch (err) {
                 console.error("Ошибка отправки:", err);
                 const domain = webAppUrl ? webAppUrl.replace(/\/$/, '') : '';
                 const link = `${domain}/get/${encodeURIComponent(path.basename(filePath))}`;
-
-                // Выводим текст ошибки для диагностики
                 const errDetail = err.message ? ` (${err.message})` : '';
-                const failMsg = `⚠️ Ошибка отправки в чат${errDetail}. Но файл доступен по прямой ссылке на 1 час:\n👉 ${link}`;
+                const failMsg = `⚠️ Не удалось отправить файл в чат${errDetail}.\n\nНо вы можете скачать его по прямой ссылке:\n👉 <a href="${link}">Скачать медиафайл</a>`;
 
                 if (statusMessageId) {
-                    try { await bot.telegram.editMessageText(chatId, statusMessageId, undefined, failMsg); } catch (e) {
-                        try { await bot.telegram.sendMessage(chatId, failMsg); } catch (e2) { }
+                    try {
+                        await bot.telegram.editMessageText(chatId, statusMessageId, undefined, failMsg, { parse_mode: 'HTML' });
+                    } catch (e) {
+                        try { await bot.telegram.sendMessage(chatId, failMsg, { parse_mode: 'HTML' }); } catch (e2) { }
                     }
                 } else {
-                    try { await bot.telegram.sendMessage(chatId, failMsg); } catch (e) { }
+                    try { await bot.telegram.sendMessage(chatId, failMsg, { parse_mode: 'HTML' }); } catch (e) { }
                 }
             }
 
