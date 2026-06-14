@@ -344,6 +344,11 @@ const getSeededStats = () => {
 
 // Команда /stats
 bot.command('stats', async (ctx) => {
+    const userId = ctx.from.id;
+    if (String(userId) !== String(adminId)) {
+        console.warn(`[⚠️ Access Denied for /stats] ${userId} is not ${adminId}`);
+        return ctx.reply('Доступ разрешен только администратору.');
+    }
     try {
         const statsData = getSeededStats();
         const message = `
@@ -378,8 +383,18 @@ bot.command('ping', (ctx) => ctx.reply('pong! 🏓'));
 // Команда /start
 bot.command('start', async (ctx) => {
     trackUser(ctx.from.id);
-    await ctx.replyWithHTML(`<tg-emoji emoji-id="5938537205847822613">🏡</tg-emoji> <b>Добро пожаловать в Klyro!</b> <tg-emoji emoji-id="5985478698722136468">👋</tg-emoji>\n\nБот готов скачивать медиафайлы напрямую в чат.`,
-        Markup.inlineKeyboard([Markup.button.webApp('🚀 Открыть Klyro', webAppUrl)]));
+    await ctx.replyWithHTML(`<b>Добро пожаловать в Klyro!</b> <tg-emoji emoji-id="5985478698722136468">👋</tg-emoji>\n\nЯ готов скачивать медиафайлы напрямую в чат. Вы можете просто отправить ссылку прямо в этот диалог или открыть Web App приложение по кнопке «Web App Interface» слева от поля ввода (или по кнопке «Открыть Klyro» ниже).`,
+        {
+            reply_markup: {
+                inline_keyboard: [[
+                    {
+                        text: '🔗 Открыть Klyro',
+                        web_app: { url: webAppUrl },
+                        icon_custom_emoji_id: '6028171274939797252'
+                    }
+                ]]
+            }
+        });
 });
 
 // Команда /admin
@@ -590,7 +605,11 @@ async function startDownloadJob({ url, chatId, format = 'video', quality = '1080
                 parse_mode: 'HTML',
                 reply_markup: {
                     inline_keyboard: [[
-                        { text: '🛑 Отменить', callback_data: `cancel_${jobId}` }
+                        {
+                            text: '❌ Отменить',
+                            callback_data: `cancel_${jobId}`,
+                            icon_custom_emoji_id: '5774077015388852135'
+                        }
                     ]]
                 }
             });
@@ -708,7 +727,11 @@ async function startDownloadJob({ url, chatId, format = 'video', quality = '1080
                                 parse_mode: 'HTML',
                                 reply_markup: {
                                     inline_keyboard: [[
-                                        { text: '🛑 Отменить', callback_data: `cancel_${jobId}` }
+                                        {
+                                            text: '❌ Отменить',
+                                            callback_data: `cancel_${jobId}`,
+                                            icon_custom_emoji_id: '5774077015388852135'
+                                        }
                                     ]]
                                 }
                             }
@@ -791,7 +814,7 @@ async function startDownloadJob({ url, chatId, format = 'video', quality = '1080
                 const link = `${domain}/get/${encodeURIComponent(path.basename(filePath))}`;
 
                 if (fileSizeMB < 49.5) {
-                    const captionText = `🎬 <b>${titleStore[jobId] || (format === 'audio' ? 'аудио' : 'видео')}</b>\n\n💾 Размер: ${fileSizeMB.toFixed(1)} МБ\n\n👉 <a href="${link}">Прямая ссылка на скачивание</a>`;
+                    const captionText = `<tg-emoji emoji-id="5944753741512052670">📷</tg-emoji> <b>${titleStore[jobId] || (format === 'audio' ? 'аудио' : 'видео')}</b>\n\n<tg-emoji emoji-id="5805506958995758422">📁</tg-emoji> Размер: ${fileSizeMB.toFixed(1)} МБ\n\n<tg-emoji emoji-id="5774022692642492953">✅</tg-emoji> <a href="${link}">Прямая ссылка на скачивание</a>`;
                     
                     if (format === 'audio') {
                         await bot.telegram.sendAudio(chatId, { source: filePath }, {
@@ -810,7 +833,7 @@ async function startDownloadJob({ url, chatId, format = 'video', quality = '1080
                     }
                 } else {
                     // Большой файл: отправляем красивое уведомление со ссылкой на скачивание
-                    const msgText = `🎬 <b>${titleStore[jobId] || (format === 'audio' ? 'аудио' : 'видео')}</b>\n\n💾 Размер файла: <b>${fileSizeMB.toFixed(1)} МБ</b>\n\nℹ️ <i>Из-за ограничений Telegram файлы крупнее 50 МБ бот отправляет в виде прямой ссылки для автоматического скачивания на ваше устройство:</i>\n\n👉 <a href="${link}">Скачать медиафайл</a>`;
+                    const msgText = `<tg-emoji emoji-id="5944753741512052670">📷</tg-emoji> <b>${titleStore[jobId] || (format === 'audio' ? 'аудио' : 'видео')}</b>\n\n<tg-emoji emoji-id="5805506958995758422">📁</tg-emoji> Размер файла: <b>${fileSizeMB.toFixed(1)} МБ</b>\n\n<tg-emoji emoji-id="5774022692642492953">✅</tg-emoji> <i>Из-за ограничений Telegram файлы крупнее 50 МБ бот отправляет в виде прямой ссылки для автоматического скачивания на ваше устройство:</i>\n\n👉 <a href="${link}">Скачать медиафайл</a>`;
                     
                     if (statusMessageId) {
                         try {
@@ -927,17 +950,16 @@ bot.on('text', async (ctx) => {
         }, 10 * 60 * 1000);
 
         // Отправляем меню выбора формата и качества
-        await ctx.reply(`🎬 <b>Выберите формат скачивания:</b>\n\n📝 Название: <i>${title}</i>`, {
-            parse_mode: 'HTML',
+        await ctx.replyWithHTML(`<tg-emoji emoji-id="5944753741512052670">📷</tg-emoji> <b>Выберите формат скачивания:</b>\n\n<tg-emoji emoji-id="5805506958995758422">📁</tg-emoji> Название: <i>${title}</i>`, {
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: '🎬 Видео 1080p', callback_data: `dl_${pendingId}_video_1080` },
-                        { text: '🎬 Видео 720p', callback_data: `dl_${pendingId}_video_720` }
+                        { text: '1️⃣ Видео 1080p', callback_data: `dl_${pendingId}_video_1080`, icon_custom_emoji_id: '5794164805065514131' },
+                        { text: '2️⃣ Видео 720p', callback_data: `dl_${pendingId}_video_720`, icon_custom_emoji_id: '5794085322400733645' }
                     ],
                     [
-                        { text: '🎬 Видео 480p', callback_data: `dl_${pendingId}_video_480` },
-                        { text: '🎵 Аудио (MP3)', callback_data: `dl_${pendingId}_audio` }
+                        { text: '3️⃣ Видео 480p', callback_data: `dl_${pendingId}_video_480`, icon_custom_emoji_id: '5794280000383358988' },
+                        { text: '📁 Аудио (MP3)', callback_data: `dl_${pendingId}_audio`, icon_custom_emoji_id: '5805506958995758422' }
                     ]
                 ]
             }
