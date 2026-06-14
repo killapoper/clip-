@@ -277,7 +277,7 @@ const titleStore = {};
 const jobStore = {}; // Хранилище процессов { jobId: childProcess }
 const chatStore = {}; // Хранилище chatId для каждой работы { jobId: chatId }
 const pendingDownloads = {}; // Временный стор для ссылок из чата { pendingId: { url, chatId, title } }
-const MAX_CONCURRENT_JOBS = 3; // Лимит параллельных загрузок кумулятивно
+const MAX_CONCURRENT_JOBS = parseInt(process.env.MAX_CONCURRENT_JOBS) || 10; // Лимит параллельных загрузок кумулятивно
 
 // Проверка наличия обязательных переменных
 if (!process.env.BOT_TOKEN) {
