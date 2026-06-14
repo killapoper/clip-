@@ -11,8 +11,7 @@ services:
       - "3000:3000"
     volumes:
       - ./downloads:/app/downloads
-      - ./stats.json:/app/stats.json
-      - ./cookies.txt:/app/cookies.txt
+      - ./data:/app/data
     environment:
       - NODE_ENV=production
     depends_on:

@@ -21,9 +21,14 @@ const bot = new Telegraf(process.env.BOT_TOKEN, {
 
 // Улучшенная функция для исправления формата cookies.txt
 function fixCookiesFormat() {
-    const cookiesPath = path.join(__dirname, 'cookies.txt');
+    const cookiesPath = path.join(__dirname, 'data', 'cookies.txt');
     if (fs.existsSync(cookiesPath)) {
         try {
+            const stat = fs.statSync(cookiesPath);
+            if (!stat.isFile()) {
+                console.warn("⚠️ [Cookies] cookies.txt является папкой, а не файлом! Пропускаю.");
+                return;
+            }
             let content = fs.readFileSync(cookiesPath, 'utf8');
             
             // 1. Убираем BOM
@@ -116,7 +121,7 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 // --- СИСТЕМА АНАЛИТИКИ (Stats Persistence) ---
-const statsFile = path.join(__dirname, 'stats.json');
+const statsFile = path.join(__dirname, 'data', 'stats.json');
 let stats = {
     totalTrafficBytes: 0,
     dailyUsers: {}, // { "YYYY-MM-DD": [ids] }
@@ -128,17 +133,26 @@ let stats = {
 // Загрузка статистики
 if (fs.existsSync(statsFile)) {
     try {
-        stats = JSON.parse(fs.readFileSync(statsFile));
-        // Инициализация новых полей при миграции
-        if (!stats.allTimeUsers) stats.allTimeUsers = [];
-        if (!stats.totalDownloads) stats.totalDownloads = 0;
-        if (!stats.topLinks) stats.topLinks = {};
-        if (typeof stats.totalTrafficBytes !== 'number') stats.totalTrafficBytes = 0;
+        const stat = fs.statSync(statsFile);
+        if (stat.isFile()) {
+            stats = JSON.parse(fs.readFileSync(statsFile));
+            // Инициализация новых полей при миграции
+            if (!stats.allTimeUsers) stats.allTimeUsers = [];
+            if (!stats.totalDownloads) stats.totalDownloads = 0;
+            if (!stats.topLinks) stats.topLinks = {};
+            if (typeof stats.totalTrafficBytes !== 'number') stats.totalTrafficBytes = 0;
+        } else {
+            console.warn("⚠️ [Stats] stats.json является папкой, а не файлом!");
+        }
     } catch (e) { console.error("Ошибка загрузки стат:", e); }
 }
 
 function saveStats() {
     try {
+        if (fs.existsSync(statsFile) && !fs.statSync(statsFile).isFile()) {
+            console.warn("⚠️ [Stats] Не удается сохранить, так как stats.json является папкой!");
+            return;
+        }
         fs.writeFileSync(statsFile, JSON.stringify(stats, null, 2));
     } catch (e) { console.error("Ошибка сохранения стат:", e); }
 }
@@ -608,7 +622,7 @@ async function startDownloadJob({ url, chatId, format = 'video', quality = '1080
             ];
         }
 
-        const cookiesPath = path.join(__dirname, 'cookies.txt');
+        const cookiesPath = path.join(__dirname, 'data', 'cookies.txt');
         if (fs.existsSync(cookiesPath)) {
             const cookieStat = fs.statSync(cookiesPath);
             if (cookieStat.isFile()) {
@@ -848,8 +862,13 @@ bot.on('text', async (ctx) => {
                     '--youtube-skip-dash-manifest',
                     url
                 ];
-                const cookiesPath = path.join(__dirname, 'cookies.txt');
-                if (fs.existsSync(cookiesPath)) args.unshift('--cookies', cookiesPath);
+                const cookiesPath = path.join(__dirname, 'data', 'cookies.txt');
+                if (fs.existsSync(cookiesPath)) {
+                    try {
+                        const stat = fs.statSync(cookiesPath);
+                        if (stat.isFile()) args.unshift('--cookies', cookiesPath);
+                    } catch (e) { }
+                }
                 
                 const ytDlp = spawn('yt-dlp', args);
                 let out = '';
@@ -1010,8 +1029,13 @@ app.get('/api/info', async (req, res) => {
         '--prefer-free-formats',
         '--youtube-skip-dash-manifest'
     ];
-    const cookiesPath = path.join(__dirname, 'cookies.txt');
-    if (fs.existsSync(cookiesPath)) args.unshift('--cookies', cookiesPath);
+    const cookiesPath = path.join(__dirname, 'data', 'cookies.txt');
+    if (fs.existsSync(cookiesPath)) {
+        try {
+            const stat = fs.statSync(cookiesPath);
+            if (stat.isFile()) args.unshift('--cookies', cookiesPath);
+        } catch (e) { }
+    }
     args.push(url);
 
     const ytDlp = spawn('yt-dlp', args);

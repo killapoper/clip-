@@ -25,8 +25,8 @@ RUN npm install --production
 # Копируем исходный код приложения
 COPY . .
 
-# Создаем папку для загрузок и даем права (на всякий случай)
-RUN mkdir -p downloads && chmod 777 downloads
+# Создаем папки для загрузок, данных и даем права
+RUN mkdir -p downloads data && chmod 777 downloads data
 
 # Приложение слушает на 3000 порту
 EXPOSE 3000
