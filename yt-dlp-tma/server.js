@@ -347,16 +347,25 @@ bot.command('stats', async (ctx) => {
     try {
         const statsData = getSeededStats();
         const message = `
-📊 <b>Статистика Klyro:</b>
+<tg-emoji emoji-id="5397838301166078960">👤</tg-emoji> <b>Статистика Klyro:</b>
 
-👥 Всего пользователей бота: <b>${statsData.totalUsers}</b>
-🔥 Активных за 24 часа (DAU): <b>${statsData.dau}</b>
-🌟 Активных за 30 дней (MAU): <b>${statsData.mau}</b>
-📥 Количество скачиваний в день: <b>${statsData.downloadsPerDay}</b>
-⚡️ Нагрузка сервера: <b>${statsData.serverLoad}%</b>
-🎬 Кол-во видео в обработке: <b>${statsData.processingVideos}</b>
+<tg-emoji emoji-id="5400079672799165880">👥</tg-emoji> Всего пользователей бота: <b>${statsData.totalUsers}</b>
+<tg-emoji emoji-id="5399841684366329533">↖️</tg-emoji> Активных за 24 часа (DAU): <b>${statsData.dau}</b>
+<tg-emoji emoji-id="5397893654704586539">✔️</tg-emoji> Активных за 30 дней (MAU): <b>${statsData.mau}</b>
+<tg-emoji emoji-id="5399862394698629054">✉️</tg-emoji> Количество скачиваний в день: <b>${statsData.downloadsPerDay}</b>
+<tg-emoji emoji-id="5397637648883940852">⏲️</tg-emoji> Нагрузка сервера: <b>${statsData.serverLoad}%</b>
+<tg-emoji emoji-id="5397804246370386558">📷</tg-emoji> Кол-во видео в обработке: <b>${statsData.processingVideos}</b>
         `;
-        await ctx.replyWithHTML(message.trim());
+        
+        const photoPath = path.join(__dirname, 'stats.png');
+        if (fs.existsSync(photoPath)) {
+            await ctx.replyWithPhoto({ source: photoPath }, {
+                caption: message.trim(),
+                parse_mode: 'HTML'
+            });
+        } else {
+            await ctx.replyWithHTML(message.trim());
+        }
     } catch (err) {
         console.error("Stats command error:", err);
     }
