@@ -13,7 +13,25 @@ services:
       - ./downloads:/app/downloads
       - ./stats.json:/app/stats.json
       - ./cookies.txt:/app/cookies.txt
-      - ./session.txt:/app/session.txt
-    # Даем приложению знать, что оно в Docker (если нужно)
     environment:
       - NODE_ENV=production
+    depends_on:
+      - telegram-bot-api
+
+  telegram-bot-api:
+    image: aiogram/telegram-bot-api:latest
+    container_name: telegram-bot-api
+    restart: always
+    environment:
+      TELEGRAM_API_ID: "${API_ID:-17349}"
+      TELEGRAM_API_HASH: "${API_HASH:-344583e45741c957fe186160562e2122}"
+      TELEGRAM_LOCAL: "true"
+    volumes:
+      - telegram-bot-api-data:/var/lib/telegram-bot-api
+      - ./downloads:/app/downloads
+    ports:
+      - "8081:8081"
+
+volumes:
+  telegram-bot-api-data:
+

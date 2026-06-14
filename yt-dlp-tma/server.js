@@ -8,42 +8,15 @@ const fs = require('fs');
 const os = require('os');
 const { randomUUID } = require('crypto');
 
-// --- ГОРЯЧЕЕ ДОПОЛНЕНИЕ: GramJS (библиотека 'telegram') для 2 ГБ ---
-const { TelegramClient } = require('telegram');
-const { StringSession } = require('telegram/sessions');
-const { CustomFile } = require('telegram/client/uploads');
-
 const app = express();
 const port = process.env.PORT || 3000;
 const webAppUrl = process.env.WEBAPP_URL;
 const adminId = parseInt(process.env.ADMIN_ID) || 0;
 
-// Официальные ключи (по умолчанию)
-const API_ID = parseInt(process.env.API_ID) || 17349;
-const API_HASH = process.env.API_HASH || '344583e45741c957fe186160562e2122';
-
-// Загрузка сессии из файла для персистентности в Docker
-const sessionPath = path.join(__dirname, 'session.txt');
-let sessionStr = "";
-if (fs.existsSync(sessionPath)) {
-    try {
-        sessionStr = fs.readFileSync(sessionPath, 'utf8').trim();
-    } catch (e) {
-        console.error("❌ Ошибка чтения session.txt:", e.message);
+const bot = new Telegraf(process.env.BOT_TOKEN, {
+    telegram: {
+        apiRoot: process.env.TELEGRAM_API_ROOT || 'http://telegram-bot-api:8081'
     }
-}
-if (!sessionStr) {
-    sessionStr = process.env.TELEGRAM_SESSION || "";
-}
-
-const stringSession = new StringSession(sessionStr);
-
-const bot = new Telegraf(process.env.BOT_TOKEN);
-const client = new TelegramClient(stringSession, API_ID, API_HASH, {
-    connectionRetries: 5,
-    deviceModel: "Klyro Desktop",
-    systemVersion: "Windows 11",
-    appVersion: "1.0.0"
 });
 
 // Улучшенная функция для исправления формата cookies.txt
@@ -110,37 +83,13 @@ function autoUpdateYtDlp() {
     });
 }
 
-// Инициализация GramJS (Безопасный запуск)
+// Инициализация и автообновление
 (async () => {
     fixCookiesFormat();
     autoUpdateYtDlp();
     
     // Запуск автоматического обновления каждые 24 часа
     setInterval(autoUpdateYtDlp, 24 * 60 * 60 * 1000);
-
-    try {
-        await client.start({
-            botAuthToken: process.env.BOT_TOKEN,
-        });
-        const savedSession = client.session.save();
-        console.log("🚀 [MTProto] МАГИЯ АКТИВИРОВАНА!");
-        
-        // Сохраняем сессию в файл для автоматического использования при перезапуске
-        try {
-            fs.writeFileSync(sessionPath, savedSession, 'utf8');
-            console.log("💾 [SESSION] Сессия сохранена в session.txt");
-        } catch (e) {
-            console.error("❌ Не удалось сохранить session.txt:", e.message);
-        }
-
-        if (!sessionStr && !process.env.TELEGRAM_SESSION) {
-            console.log("🔑 [SESSION] Скопируйте эту строку в .env или session.txt (если не сохранилось):");
-            console.log(savedSession);
-        }
-    } catch (err) {
-        console.warn("⚠️ [MTProto] Не удалось запустить 2 ГБ режим.");
-        console.error("Детали ошибки:", err.message);
-    }
 })();
 
 // --- ГЛОБАЛЬНЫЙ ЛОГГЕР И ОБРАБОТЧИК ОШИБОК ---
@@ -721,22 +670,20 @@ async function startDownloadJob({ url, chatId, format = 'video', quality = '1080
             }
 
             try {
-                if (fileSizeMB < 49) {
-                    if (format === 'audio') await bot.telegram.sendAudio(chatId, { source: filePath });
-                    else await bot.telegram.sendVideo(chatId, { source: filePath });
-                } else {
-                    const toUpload = new CustomFile(path.basename(filePath), statsInfo.size, filePath);
-                    const uploadedFile = await client.uploadFile({
-                        file: toUpload,
-                        workers: 8,
-                    });
+                const domain = webAppUrl ? webAppUrl.replace(/\/$/, '') : '';
+                const link = `${domain}/get/${encodeURIComponent(path.basename(filePath))}`;
+                const captionText = `🎬 <b>${titleStore[jobId] || (format === 'audio' ? 'аудио' : 'видео')}</b>\n\n💾 Размер: ${fileSizeMB.toFixed(1)} МБ\n\n👉 <a href="${link}">Прямая ссылка на скачивание</a>`;
 
-                    const entity = await client.getEntity(parseInt(chatId));
-                    await client.sendFile(entity, {
-                        file: uploadedFile,
-                        video: format !== 'audio',
-                        supportsStreaming: true,
-                        caption: `🎬 ${titleStore[jobId] || 'видео'}\n\nРазмер: ${fileSizeMB.toFixed(1)} МБ`,
+                if (format === 'audio') {
+                    await bot.telegram.sendAudio(chatId, { source: filePath }, {
+                        caption: captionText,
+                        parse_mode: 'HTML'
+                    });
+                } else {
+                    await bot.telegram.sendVideo(chatId, { source: filePath }, {
+                        supports_streaming: true,
+                        caption: captionText,
+                        parse_mode: 'HTML'
                     });
                 }
                 if (statusMessageId) {
@@ -997,5 +944,5 @@ bot.launch({ dropPendingUpdates: true }).then(() => {
     console.error('🔴 [Telegram Bot] ОШИБКА ЗАПУСКА:', err);
 });
 
-process.once('SIGINT', () => { bot.stop(); client.disconnect(); });
-process.once('SIGTERM', () => { bot.stop(); client.disconnect(); });
+process.once('SIGINT', () => { bot.stop(); });
+process.once('SIGTERM', () => { bot.stop(); });
