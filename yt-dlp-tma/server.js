@@ -429,29 +429,6 @@ async function handleBroadcastInput(ctx) {
     if (broadcastState.step === 'awaiting_content') {
         const msg = ctx.message;
         
-        let isValid = false;
-        if (broadcastState.contentType === 'text') {
-            if (msg.text) isValid = true;
-        } else if (broadcastState.contentType === 'audio') {
-            if (msg.audio) isValid = true;
-        } else if (broadcastState.contentType === 'media') {
-            if (msg.photo || msg.video || msg.animation || msg.document) isValid = true;
-        }
-        
-        if (!isValid) {
-            let expected = 'текстовое сообщение';
-            if (broadcastState.contentType === 'audio') expected = 'аудиозапись';
-            if (broadcastState.contentType === 'media') expected = 'фото, видео или GIF';
-            return ctx.reply(`❌ <b>Неверный тип контента!</b>\n\nПожалуйста, отправьте именно <b>${expected}</b> или нажмите «Отменить» ниже:`, {
-                parse_mode: 'HTML',
-                reply_markup: {
-                    inline_keyboard: [[
-                        { text: '❌ Отменить', callback_data: 'admin_broadcast_cancel' }
-                    ]]
-                }
-            });
-        }
-        
         broadcastState.message = msg;
         broadcastState.step = 'awaiting_confirm';
         
@@ -716,23 +693,14 @@ bot.action('admin_emergency_stop', async (ctx) => {
 bot.action('admin_broadcast_menu', async (ctx) => {
     if (String(ctx.from.id) !== String(adminId)) return ctx.answerCbQuery('У вас нет прав');
     
-    broadcastState = { step: 'awaiting_content_type', contentType: null, message: null, scheduleTime: null };
+    broadcastState = { step: 'awaiting_content', contentType: null, message: null, scheduleTime: null };
     
-    await ctx.editMessageText('📢 <b>Создание рассылки</b>\n\nВыберите тип сообщения, которое вы хотите разослать всем пользователям:', {
+    await ctx.editMessageText('📢 <b>Создание рассылки</b>\n\nПожалуйста, отправьте боту любое сообщение, которое вы хотите разослать всем пользователям (это может быть текст, фото, видео, голосовое сообщение, аудиозапись, GIF или файл — как отдельным сообщением, так и с подписью).\n\n<i>Пришлите сообщение или нажмите «Отменить» ниже:</i>', {
         parse_mode: 'HTML',
         reply_markup: {
-            inline_keyboard: [
-                [
-                    { text: '📝 Текст', callback_data: 'broadcast_type:text' },
-                    { text: '🎵 Аудио', callback_data: 'broadcast_type:audio' }
-                ],
-                [
-                    { text: '🎬 Медиа (Фото/Видео/GIF)', callback_data: 'broadcast_type:media' }
-                ],
-                [
-                    { text: '❌ Отменить', callback_data: 'admin_broadcast_cancel' }
-                ]
-            ]
+            inline_keyboard: [[
+                { text: 'Отменить', callback_data: 'admin_broadcast_cancel', icon_custom_emoji_id: '5774077015388852135' }
+            ]]
         }
     });
 });
@@ -798,33 +766,7 @@ CPU: ${usage.cpuUsage.toFixed(1)}% | RAM: ${usage.ramUsage.toFixed(1)}%
     }
 });
 
-// Выбор типа рассылки
-bot.action(/^broadcast_type:(.+)$/, async (ctx) => {
-    if (String(ctx.from.id) !== String(adminId)) return ctx.answerCbQuery('У вас нет прав');
-    
-    const type = ctx.match[1];
-    broadcastState.contentType = type;
-    broadcastState.step = 'awaiting_content';
-    
-    let typeName = 'текст';
-    let instruction = 'Пожалуйста, отправьте текстовое сообщение с вашей рассылкой.';
-    if (type === 'audio') {
-        typeName = 'аудио';
-        instruction = 'Пожалуйста, отправьте аудиозапись для рассылки.';
-    } else if (type === 'media') {
-        typeName = 'медиа';
-        instruction = 'Пожалуйста, отправьте фото, видео или GIF для рассылки (можно с текстовым описанием).';
-    }
-    
-    await ctx.editMessageText(`📥 <b>Создание рассылки: ${typeName}</b>\n\n${instruction}\n\n<i>Отправьте сообщение боту. Вы также можете использовать встроенное форматирование.</i>`, {
-        parse_mode: 'HTML',
-        reply_markup: {
-            inline_keyboard: [[
-                { text: '❌ Отменить', callback_data: 'admin_broadcast_cancel' }
-            ]]
-        }
-    });
-});
+
 
 // Действие: Отправить сейчас
 bot.action('broadcast_send_now', async (ctx) => {
