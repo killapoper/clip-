@@ -288,36 +288,45 @@ const getSeededStats = () => {
         return Math.floor(rand * (max - min + 1)) + min;
     };
 
-    // 1. Всего пользователей бота: [1113, 1700]
-    const totalUsers = getRandomRange(1113, 1700, 1);
+    // 1. Детерминированное общее количество пользователей бота с плавным ростом
+    // Стартует с 1367 пользователей 15 июня 2026 года и растет на 1-5 пользователей каждые 2-3 дня
+    const baseDate = new Date('2026-06-15T00:00:00Z').getTime();
+    const diffDays = Math.floor(Math.max(0, now - baseDate) / (24 * 60 * 60 * 1000));
     
-    // Коэффициент общего числа пользователей для связи с другими метриками (0.0 - 1.0)
-    const userRatio = (totalUsers - 1113) / (1700 - 1113);
+    let totalUsers = 1367;
+    let lastIncreaseDay = 0;
+    for (let d = 1; d <= diffDays; d++) {
+        // Детерминированный интервал прироста: 2 или 3 дня
+        const hash = Math.sin(lastIncreaseDay + 55) * 10000;
+        const randInterval = (hash - Math.floor(hash)) > 0.5 ? 3 : 2;
+        
+        if (d - lastIncreaseDay >= randInterval) {
+            // Детерминированный шаг прироста: 1-5 пользователей
+            const incHash = Math.sin(d + 77) * 10000;
+            const increment = Math.floor((incHash - Math.floor(incHash)) * 5) + 1;
+            totalUsers += increment;
+            lastIncreaseDay = d;
+        }
+    }
 
-    // 2. Активных за 30 дней (MAU): [810, 1375]
-    // Сдвигаем диапазон в зависимости от общего количества пользователей
-    const mauMin = 810 + Math.floor(userRatio * 150); // от 810 до 960
-    const mauMax = 1375;
+    // 2. Активных за 30 дней (MAU): 65% - 75% от общего количества пользователей
+    const mauMin = Math.floor(totalUsers * 0.65);
+    const mauMax = Math.floor(totalUsers * 0.75);
     const mau = getRandomRange(mauMin, mauMax, 3);
 
-    // 3. Активных за 24 часа (DAU): [117, 273]
-    // Коррелирует с общим числом пользователей и MAU
-    const dauMin = 117 + Math.floor(userRatio * 60); // от 117 до 177
-    const dauMax = Math.min(273, Math.floor(mau * 0.25)); // DAU обычно не более 25% от MAU
-    const finalDauMax = Math.max(dauMin + 10, dauMax);
-    const dau = getRandomRange(dauMin, finalDauMax, 2);
+    // 3. Активных за 24 часа (DAU): 15% - 22% от MAU
+    const dauMin = Math.floor(mau * 0.15);
+    const dauMax = Math.floor(mau * 0.22);
+    const dau = getRandomRange(dauMin, dauMax, 2);
 
-    // 4. Количество скачиваний в день:
-    // Зависит от количества активных пользователей за 24 часа (DAU)
-    // В среднем активный пользователь делает от 1.5 до 3 скачиваний в день
+    // 4. Количество скачиваний в день: 1.5 - 3.0 от DAU
     const downloadsMin = Math.floor(dau * 1.5);
     const downloadsMax = Math.floor(dau * 3.0);
     const downloadsPerDay = getRandomRange(downloadsMin, downloadsMax, 4);
 
     // 5. Кол-во видео в обработке: [3, 13]
-    // Зависит от DAU
-    const dauRatio = (dau - 117) / (273 - 117);
-    const processingMin = 3 + Math.floor(dauRatio * 4); // от 3 до 7
+    const seedDau = pseudoRandom(seedTime + 6);
+    const processingMin = 3 + Math.floor(seedDau * 4); // от 3 до 7
     const processingMax = 13;
     const processingVideos = getRandomRange(processingMin, processingMax, 6);
 
