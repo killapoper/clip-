@@ -12,7 +12,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 const webAppUrl = process.env.WEBAPP_URL;
 const adminId = parseInt(process.env.ADMIN_ID) || 0;
-const channelId = process.env.CHANNEL_ID;
+const channelId = process.env.CHANNEL_ID || '-1001882250108';
 const channelInviteLink = 'https://t.me/+HVYmNAlXj5M1Y2Qy';
 
 async function isUserSubscribed(telegram, userId) {
