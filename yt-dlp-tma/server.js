@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const { Telegraf, Markup } = require('telegraf');
 const cors = require('cors');
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -1054,6 +1054,65 @@ bot.action(/^dl_(.+)_(video|audio)_?(\d+)?$/, async (ctx) => {
     });
 });
 
+/**
+ * Получает ширину, высоту и длительность видео через ffprobe.
+ * Учитывает угол поворота (rotation) для корректной передачи пропорций.
+ */
+function getVideoMetadata(filePath) {
+    return new Promise((resolve) => {
+        const args = [
+            '-v', 'error',
+            '-select_streams', 'v:0',
+            '-show_entries', 'stream=width,height,duration,rotation:stream_tags=rotate',
+            '-of', 'json',
+            filePath
+        ];
+        
+        execFile('ffprobe', args, (error, stdout, stderr) => {
+            if (error) {
+                console.error(`[ffprobe error] Не удалось получить метаданные для ${filePath}:`, error);
+                return resolve(null);
+            }
+            try {
+                const data = JSON.parse(stdout);
+                if (data && data.streams && data.streams[0]) {
+                    const stream = data.streams[0];
+                    let width = stream.width ? parseInt(stream.width, 10) : undefined;
+                    let height = stream.height ? parseInt(stream.height, 10) : undefined;
+                    const duration = stream.duration ? Math.round(parseFloat(stream.duration)) : undefined;
+                    
+                    // Обработка поворота видео (например, вертикальные Reels с метаданными о повороте)
+                    let rotation = 0;
+                    if (stream.rotation) {
+                        rotation = Math.abs(parseInt(stream.rotation, 10));
+                    } else if (stream.tags && stream.tags.rotate) {
+                        rotation = Math.abs(parseInt(stream.tags.rotate, 10));
+                    } else if (stream.side_data_list) {
+                        const sideData = stream.side_data_list.find(s => s.side_data_type === 'Display Matrix');
+                        if (sideData && sideData.rotation) {
+                            rotation = Math.abs(parseInt(sideData.rotation, 10));
+                        }
+                    }
+                    
+                    // Если видео повернуто на 90 или 270 градусов, меняем ширину и высоту местами
+                    if ((rotation === 90 || rotation === 270) && width && height) {
+                        const temp = width;
+                        width = height;
+                        height = temp;
+                    }
+                    
+                    if (width && height) {
+                        return resolve({ width, height, duration });
+                    }
+                }
+            } catch (e) {
+                console.error("[ffprobe parse error] Ошибка парсинга json ffprobe:", e);
+            }
+            resolve(null);
+        });
+    });
+}
+
 // Функция запуска задачи скачивания и отправки
 async function startDownloadJob({ url, chatId, format = 'video', quality = '1080', title = 'video', jobId = null }) {
     if (!jobId) jobId = randomUUID();
@@ -1291,7 +1350,8 @@ async function startDownloadJob({ url, chatId, format = 'video', quality = '1080
                 const link = `${domain}/get/${encodeURIComponent(path.basename(filePath))}`;
 
                 if (fileSizeMB < 49.5) {
-                    const captionText = `<tg-emoji emoji-id="5944753741512052670">📷</tg-emoji> <b>${titleStore[jobId] || (format === 'audio' ? 'аудио' : 'видео')}</b>\n\n<tg-emoji emoji-id="5805506958995758422">📁</tg-emoji> Размер: ${fileSizeMB.toFixed(1)} МБ\n\n<tg-emoji emoji-id="5774022692642492953">✅</tg-emoji> <a href="${link}">Прямая ссылка на скачивание</a>`;
+                    // Убрали прямую ссылку на скачивание с сервера для файлов < 50 МБ
+                    const captionText = `<tg-emoji emoji-id="5944753741512052670">📷</tg-emoji> <b>${titleStore[jobId] || (format === 'audio' ? 'аудио' : 'видео')}</b>\n\n<tg-emoji emoji-id="5805506958995758422">📁</tg-emoji> Размер: ${fileSizeMB.toFixed(1)} МБ`;
                     
                     if (format === 'audio') {
                         await bot.telegram.sendAudio(chatId, { source: filePath }, {
@@ -1299,15 +1359,33 @@ async function startDownloadJob({ url, chatId, format = 'video', quality = '1080
                             parse_mode: 'HTML'
                         });
                     } else {
-                        await bot.telegram.sendVideo(chatId, { source: filePath }, {
+                        const extraParams = {
                             supports_streaming: true,
                             caption: captionText,
                             parse_mode: 'HTML'
-                        });
+                        };
+                        
+                        // Считываем пропорции и параметры видео через ffprobe, чтобы избежать сжатия в квадрат
+                        const metadata = await getVideoMetadata(filePath);
+                        if (metadata) {
+                            if (metadata.width) extraParams.width = metadata.width;
+                            if (metadata.height) extraParams.height = metadata.height;
+                            if (metadata.duration) extraParams.duration = metadata.duration;
+                        }
+                        
+                        await bot.telegram.sendVideo(chatId, { source: filePath }, extraParams);
                     }
                     if (statusMessageId) {
                         try { await bot.telegram.deleteMessage(chatId, statusMessageId); } catch (e) { }
                     }
+                    
+                    // Немедленно удаляем локальный файл после успешной отправки в Telegram
+                    if (fs.existsSync(filePath)) {
+                        try { fs.unlinkSync(filePath); } catch (e) { }
+                    }
+                    delete progressStore[jobId];
+                    delete titleStore[jobId];
+                    delete chatStore[jobId];
                 } else {
                     // Большой файл: отправляем красивое уведомление со ссылкой на скачивание
                     const msgText = `<tg-emoji emoji-id="5944753741512052670">📷</tg-emoji> <b>${titleStore[jobId] || (format === 'audio' ? 'аудио' : 'видео')}</b>\n\n<tg-emoji emoji-id="5805506958995758422">📁</tg-emoji> Размер файла: <b>${fileSizeMB.toFixed(1)} МБ</b>\n\n<tg-emoji emoji-id="5774022692642492953">✅</tg-emoji> <i>Из-за ограничений Telegram файлы крупнее 50 МБ бот отправляет в виде прямой ссылки для автоматического скачивания на ваше устройство:</i>\n\n👉 <a href="${link}">Скачать медиафайл</a>`;
