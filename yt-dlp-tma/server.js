@@ -1197,6 +1197,11 @@ async function startDownloadJob({ url, chatId, format = 'video', quality = '1080
             }
         }
 
+        const proxyUrl = process.env.PROXY_URL || process.env.DOWNLOAD_PROXY || process.env.HTTP_PROXY;
+        if (proxyUrl) {
+            args.unshift('--proxy', proxyUrl);
+        }
+
         const ytDlp = spawn('yt-dlp', args);
         jobStore[jobId] = ytDlp;
 
@@ -1474,6 +1479,11 @@ bot.on('text', async (ctx) => {
                         if (stat.isFile()) args.unshift('--cookies', cookiesPath);
                     } catch (e) { }
                 }
+
+                const proxyUrl = process.env.PROXY_URL || process.env.DOWNLOAD_PROXY || process.env.HTTP_PROXY;
+                if (proxyUrl) {
+                    args.unshift('--proxy', proxyUrl);
+                }
                 
                 const ytDlp = spawn('yt-dlp', args);
                 let out = '';
@@ -1647,6 +1657,10 @@ app.get('/api/info', async (req, res) => {
             const stat = fs.statSync(cookiesPath);
             if (stat.isFile()) args.unshift('--cookies', cookiesPath);
         } catch (e) { }
+    }
+    const proxyUrl = process.env.PROXY_URL || process.env.DOWNLOAD_PROXY || process.env.HTTP_PROXY;
+    if (proxyUrl) {
+        args.unshift('--proxy', proxyUrl);
     }
     args.push(url);
 
