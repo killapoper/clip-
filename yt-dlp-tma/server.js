@@ -16,30 +16,7 @@ const channelId = process.env.CHANNEL_ID || '-1001882250108';
 const channelInviteLink = 'https://t.me/+HVYmNAlXj5M1Y2Qy';
 
 async function isUserSubscribed(telegram, userId) {
-    if (!userId || isNaN(userId)) return true;
-    if (String(userId) === String(adminId)) return true;
-    if (!channelId) {
-        console.warn("⚠️ [Subscription Check] CHANNEL_ID не задан в .env, проверка подписки пропускается.");
-        return true;
-    }
-    try {
-        const member = await telegram.getChatMember(channelId, userId);
-        return ['creator', 'administrator', 'member'].includes(member.status);
-    } catch (err) {
-        console.error(`[⚠️ Subscription Check Error]`, err.message);
-        const errMsg = err.message.toLowerCase();
-        if (
-            errMsg.includes('chat not found') || 
-            errMsg.includes('member of') || 
-            errMsg.includes('admin') || 
-            errMsg.includes('not found') || 
-            errMsg.includes('forbidden')
-        ) {
-            console.error("⚠️ КРИТИЧЕСКАЯ ОШИБКА: Бот не добавлен в канал или неверный CHANNEL_ID!");
-            return true;
-        }
-        return false;
-    }
+    return true;
 }
 
 const bot = new Telegraf(process.env.BOT_TOKEN, {
@@ -134,52 +111,7 @@ bot.use(async (ctx, next) => {
     return next();
 });
 
-// Middleware для проверки обязательной подписки на канал
-bot.use(async (ctx, next) => {
-    // Если это callback-запрос от кнопки проверки подписки, пропускаем дальше
-    if (ctx.callbackQuery && ctx.callbackQuery.data === 'check_subscription') {
-        return next();
-    }
-    
-    // Исключение для админа
-    if (ctx.from && String(ctx.from.id) === String(adminId)) {
-        return next();
-    }
-    
-    // Проверяем подписку только для текстовых сообщений, команд или callback-запросов (скачивание/отмена)
-    if (ctx.from && (ctx.message || ctx.callbackQuery)) {
-        const subscribed = await isUserSubscribed(bot.telegram, ctx.from.id);
-        if (!subscribed) {
-            const messageText = `⚠️ <b>Для использования бота необходимо подписаться на наш канал!</b>\n\nПодпишитесь, пожалуйста, и нажмите кнопку «Проверить подписку» ниже.`;
-            const replyMarkup = {
-                inline_keyboard: [
-                    [
-                        { text: 'Подписаться на канал', url: channelInviteLink }
-                    ],
-                    [
-                        { text: 'Проверить подписку', callback_data: 'check_subscription', icon_custom_emoji_id: '6041919344995209164' }
-                    ]
-                ]
-            };
-            
-            if (ctx.callbackQuery) {
-                try {
-                    await ctx.answerCbQuery('⚠️ Сначала подпишитесь на канал!', { show_alert: true });
-                } catch (e) {}
-                try {
-                    await ctx.replyWithHTML(messageText, { reply_markup: replyMarkup });
-                } catch (e) {}
-            } else {
-                try {
-                    await ctx.replyWithHTML(messageText, { reply_markup: replyMarkup });
-                } catch (e) {}
-            }
-            return; // Прерываем обработку
-        }
-    }
-    
-    return next();
-});
+// Проверка обязательной подписки на канал отключена
 
 bot.catch((err, ctx) => {
     console.error(`🔴 [ОШИБКА БОТА] для ${ctx.updateType}:`, err);
@@ -955,38 +887,29 @@ bot.action('broadcast_confirm_sched', async (ctx) => {
     await ctx.editMessageText(`✅ <b>Успешно запланировано!</b>\n\nРассылка будет автоматически отправлена: <code>${timeStr}</code>`, { parse_mode: 'HTML' });
 });
 
-// Действие: Проверка подписки на канал
+// Действие: Проверка подписки на канал (для совместимости со старыми кнопками)
 bot.action('check_subscription', async (ctx) => {
     const userId = ctx.from.id;
-    const subscribed = await isUserSubscribed(bot.telegram, userId);
+    try {
+        await ctx.answerCbQuery('Доступ разрешен!');
+    } catch (e) {}
+    try {
+        await ctx.deleteMessage();
+    } catch (e) {}
     
-    if (subscribed) {
-        try {
-            await ctx.answerCbQuery('🎉 Спасибо за подписку! Доступ разрешен.', { show_alert: true });
-        } catch (e) {}
-        try {
-            await ctx.deleteMessage();
-        } catch (e) {}
-        
-        // Отправляем приветственное сообщение
-        trackUser(userId);
-        await ctx.replyWithHTML(`<b>Добро пожаловать в Klyro!</b> <tg-emoji emoji-id="5985478698722136468">👋</tg-emoji>\n\nЯ готов скачивать медиафайлы напрямую в чат. Вы можете просто отправить ссылку прямо в этот диалог или открыть Web App приложение по кнопке «Web App Interface» слева от поля ввода (или по кнопке «Открыть Klyro» ниже).`,
-            {
-                reply_markup: {
-                    inline_keyboard: [[
-                        {
-                            text: 'Открыть Klyro',
-                            web_app: { url: webAppUrl },
-                            icon_custom_emoji_id: '6028171274939797252'
-                        }
-                    ]]
-                }
-            });
-    } else {
-        try {
-            await ctx.answerCbQuery('❌ Вы еще не подписались на канал!', { show_alert: true });
-        } catch (e) {}
-    }
+    trackUser(userId);
+    await ctx.replyWithHTML(`<b>Добро пожаловать в Klyro!</b> <tg-emoji emoji-id="5985478698722136468">👋</tg-emoji>\n\nЯ готов скачивать медиафайлы напрямую в чат. Вы можете просто отправить ссылку прямо в этот диалог или открыть Web App приложение по кнопке «Web App Interface» слева от поля ввода (или по кнопке «Открыть Klyro» ниже).`,
+        {
+            reply_markup: {
+                inline_keyboard: [[
+                    {
+                        text: 'Открыть Klyro',
+                        web_app: { url: webAppUrl },
+                        icon_custom_emoji_id: '6028171274939797252'
+                    }
+                ]]
+            }
+        });
 });
 
 // Действие: Отмена конкретной загрузки пользователем
@@ -1538,14 +1461,6 @@ bot.on('text', async (ctx) => {
 // API для скачивания
 app.post('/api/download', async (req, res) => {
     const { url, chatId, format, quality, title } = req.body;
-    
-    // Проверка обязательной подписки
-    if (chatId) {
-        const subscribed = await isUserSubscribed(bot.telegram, chatId);
-        if (!subscribed) {
-            return res.status(403).json({ error: 'Для использования бота необходимо подписаться на наш канал: https://t.me/+HVYmNAlXj5M1Y2Qy' });
-        }
-    }
     
     // Проверяем лимит параллельных задач
     if (Object.keys(jobStore).length >= MAX_CONCURRENT_JOBS) {
